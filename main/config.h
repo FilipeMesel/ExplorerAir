@@ -22,7 +22,9 @@
 #define NVS_WIFI_NAMESPACE      "wifi_cfg"
 #define NVS_KEY_SSID            "ssid"
 #define NVS_KEY_PASS            "password"
+
 #define NVS_IR_NAMESPACE        "ir_codes"
+
 #define NVS_SCHEDULE_NAMESPACE  "schedules"
 
 // --- CONFIGURAÇÕES DO MQTT ---
