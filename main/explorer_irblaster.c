@@ -301,7 +301,7 @@ static void flush_mqtt_tx_queue(void) {
     mqtt_message_t tx_msg;
     int count = 0;
 
-    ESP_LOGI(TAG, "Esvaziando fila de comandos aprendidos para publicação...");
+    ESP_LOGI(TAG, "Esvaziando fila de comandos mqtt para publicação...");
 
     while (xQueueReceive(g_mqtt_tx_queue, &tx_msg, pdMS_TO_TICKS(50)) == pdTRUE) {
         if (mqtt_publish_commands_json(tx_msg.payload, NULL)) {
@@ -314,6 +314,29 @@ static void flush_mqtt_tx_queue(void) {
     }
 
     ESP_LOGI(TAG, "Total de comandos IR enviados ao broker: %d", count);
+}
+
+/**
+ * Monta e enfileira a telemetria inicial com o RSSI atual
+ * para envio via fila TX de MQTT.
+ */
+bool send_telemetry(void) {
+    if (g_mqtt_tx_queue == NULL) return false;
+
+    int current_rssi = wifi_get_rssi();
+    mqtt_message_t tx_msg;
+
+    snprintf(tx_msg.payload, sizeof(tx_msg.payload),
+             "{\"cmd_id\":0,\"temp\":24,\"umid\":60,\"rtc\":\"10:00\",\"RSSI\":%d}",
+             current_rssi);
+
+    if (xQueueSend(g_mqtt_tx_queue, &tx_msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+        ESP_LOGI(TAG, "Telemetria enfileirada com sucesso: %s", tx_msg.payload);
+        return true;
+    } else {
+        ESP_LOGE(TAG, "Falha ao enfileirar telemetria. Fila TX cheia!");
+        return false;
+    }
 }
 
 // Callback do Wi-Fi
@@ -362,7 +385,7 @@ void app_main(void)
             display_show_text("WIFI OK\nONLINE");
 
             // Publica status no tópico e sobrescreve (Retain)
-            mqtt_publish_status("{\"status\":\"online\"}", true);
+            mqtt_publish_status("{\"status\":\"online\"}", false);
 
             // 3. Cria Fila e inicia a Task consumidora dos comandos
             g_mqtt_queue = xQueueCreate(10, sizeof(mqtt_message_t));
@@ -372,7 +395,10 @@ void app_main(void)
                 ESP_LOGE(TAG, "Falha ao criar fila MQTT!");
             }
 
-            // 4. Envia todos os comandos aprendidos via MQTT
+            // 4. Envia telemetria inicial via MQTT
+            send_telemetry();
+
+            // 5. Envia todos os comandos aprendidos via MQTT
             flush_mqtt_tx_queue();
 
         } else {
