@@ -23,6 +23,7 @@
 #define NVS_KEY_SSID            "ssid"
 #define NVS_KEY_PASS            "password"
 #define NVS_IR_NAMESPACE        "ir_codes"
+#define NVS_SCHEDULE_NAMESPACE  "schedules"
 
 // --- CONFIGURAÇÕES DO MQTT ---
 #define MQTT_BROKER_URI       "mqtt://broker.hivemq.com:1883"
@@ -39,4 +40,8 @@
 // --- CONFIGURAÇÕES DE TEMPO ---
 #define MQTT_INTERACTIVITY_TIMEOUT       120 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
 #define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS  100 // Timeout para envio de mensagens na fila MQTT TX
+
+// --- CONFIGURAÇÕES DE SCHEDULE ---
+#define MAX_SCHEDULES 10
+
 #endif // CONFIG_H
