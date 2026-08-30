@@ -18,10 +18,11 @@
 #define WIFI_FALLBACK_SSID    "conectaSenFio"
 #define WIFI_FALLBACK_PASS    "123456789"
 
-// --- CHAVES NVS PARA WI-FI ---
-#define NVS_WIFI_NAMESPACE    "wifi_cfg"
-#define NVS_KEY_SSID          "ssid"
-#define NVS_KEY_PASS          "password"
+// --- CHAVES NVS ---
+#define NVS_WIFI_NAMESPACE      "wifi_cfg"
+#define NVS_KEY_SSID            "ssid"
+#define NVS_KEY_PASS            "password"
+#define NVS_IR_NAMESPACE        "ir_codes"
 
 // --- CONFIGURAÇÕES DO MQTT ---
 #define MQTT_BROKER_URI       "mqtt://broker.hivemq.com:1883"

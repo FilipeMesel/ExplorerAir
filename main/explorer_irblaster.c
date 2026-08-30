@@ -16,7 +16,6 @@
 #include "explorer_protocol.h"
 
 static const char *TAG = "EXPLORER_MAIN";
-#define NVS_IR_NAMESPACE "ir_codes"
 
 // Lista exata de comandos a serem aprendidos em sequência
 static const char *IR_ACTIONS[] = {
@@ -64,6 +63,33 @@ static bool save_ir_to_nvs(const char *key, const ir_raw_command_t *cmd) {
     if (err == ESP_OK) {
         err = nvs_commit(nvs_h);
     }
+    nvs_close(nvs_h);
+    return (err == ESP_OK);
+}
+
+/**
+ * Grava as novas credenciais de Wi-Fi na NVS
+ */
+static bool save_wifi_credentials_to_nvs(const char *ssid, const char *password) {
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_WIFI_NAMESPACE, NVS_READWRITE, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao abrir NVS para Wi-Fi: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    err = nvs_set_str(nvs_h, "ssid", ssid);
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs_h, "password", password);
+    }
+
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_h);
+        ESP_LOGI(TAG, "Novas credenciais Wi-Fi salvas com sucesso!");
+    } else {
+        ESP_LOGE(TAG, "Erro ao salvar credenciais na NVS: %s", esp_err_to_name(err));
+    }
+
     nvs_close(nvs_h);
     return (err == ESP_OK);
 }
@@ -261,12 +287,37 @@ static void mqtt_consumer_task(void *pvParameters) {
                         break;
 
                     case CMD_SET_WIFI:
-                        ESP_LOGI(TAG, "Tratando CMD_SET_WIFI");
-                        display_show_text("CMD: CONFIG WIFI");
-                        break;
+                        {
+                            ESP_LOGI(TAG, "Tratando CMD_SET_WIFI");
+                            display_show_text("CMD: CONFIG WIFI");
 
-                    case CMD_SET_WIFI_ACK:
-                        ESP_LOGI(TAG, "Tratando CMD_SET_WIFI_ACK");
+                            cJSON *ssid_item = cJSON_GetObjectItem(json, "ssid");
+                            cJSON *pass_item = cJSON_GetObjectItem(json, "password");
+
+                            if (cJSON_IsString(ssid_item) && cJSON_IsString(pass_item)) {
+                                ESP_LOGI(TAG, "Nova rede recebida. SSID: %s", ssid_item->valuestring);
+
+                                display_show_text("SALVANDO WIFI...");
+
+                                if (save_wifi_credentials_to_nvs(ssid_item->valuestring, pass_item->valuestring)) {
+                                    display_show_text("WIFI ATUALIZADO");
+                                    // 1. Prepara e envia a mensagem ACK para a fila TX
+                                    mqtt_message_t ack_msg;
+                                    snprintf(ack_msg.payload, sizeof(ack_msg.payload),
+                                            "{\"cmd_id\":%d,\"status\":\"OK\"}", CMD_SET_WIFI_ACK);
+
+                                    if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+                                        ESP_LOGE(TAG, "Falha ao enfileirar ACK de Wi-Fi!");
+                                    }
+
+                                } else {
+                                    display_show_text("ERRO AO SALVAR\nWIFI");
+                                }
+                            } else {
+                                ESP_LOGE(TAG, "Campos 'ssid' ou 'password' ausentes/inválidos no JSON!");
+                                display_show_text("ERRO CREDENCIAIS");
+                            }
+                        }
                         break;
 
                     default:
@@ -301,19 +352,14 @@ static void flush_mqtt_tx_queue(void) {
     mqtt_message_t tx_msg;
     int count = 0;
 
-    ESP_LOGI(TAG, "Esvaziando fila de comandos mqtt para publicação...");
-
     while (xQueueReceive(g_mqtt_tx_queue, &tx_msg, pdMS_TO_TICKS(50)) == pdTRUE) {
         if (mqtt_publish_commands_json(tx_msg.payload, NULL)) {
             count++;
-            ESP_LOGI(TAG, "Comando IR publicado via MQTT com sucesso (%d)", count);
         } else {
             ESP_LOGE(TAG, "Falha ao publicar comando IR via MQTT");
         }
         vTaskDelay(pdMS_TO_TICKS(200)); // Pequeno delay entre publicações
     }
-
-    ESP_LOGI(TAG, "Total de comandos IR enviados ao broker: %d", count);
 }
 
 /**
@@ -398,9 +444,6 @@ void app_main(void)
             // 4. Envia telemetria inicial via MQTT
             send_telemetry();
 
-            // 5. Envia todos os comandos aprendidos via MQTT
-            flush_mqtt_tx_queue();
-
         } else {
             // Se falhar a conexão MQTT após 3 tentativas
             ESP_LOGE(TAG, "Erro na conexão MQTT!");
@@ -412,6 +455,12 @@ void app_main(void)
     }
 
     while (1) {
+
+        if(mqtt_is_connected())
+        {
+            // Garante o envio imediato da mensagem pendente na fila ao broker
+            flush_mqtt_tx_queue();
+        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
