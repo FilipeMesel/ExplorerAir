@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#define MAX_MQTT_PAYLOAD_LEN 512
+#define MAX_MQTT_PAYLOAD_LEN 2048
 
 // Definição do tipo para a Fila do FreeRTOS
 typedef struct {

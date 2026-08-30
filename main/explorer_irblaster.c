@@ -34,7 +34,8 @@ static const char *IR_ACTIONS[] = {
 #define TOTAL_ACTIONS (sizeof(IR_ACTIONS) / sizeof(IR_ACTIONS[0]))
 
 // Fila para mensagens MQTT recebidas
-QueueHandle_t g_mqtt_queue = NULL;
+QueueHandle_t g_mqtt_queue = NULL;      // Mensagens recebidas (RX)
+QueueHandle_t g_mqtt_tx_queue = NULL;   // Mensagens para Enviar (TX)
 
 // Configura os GPIOs dos botões
 static void buttons_init(void) {
@@ -65,6 +66,48 @@ static bool save_ir_to_nvs(const char *key, const ir_raw_command_t *cmd) {
     }
     nvs_close(nvs_h);
     return (err == ESP_OK);
+}
+
+/**
+ * Converte um comando IR capturado para o JSON no formato esperado
+ * e enfileira na g_mqtt_tx_queue.
+ */
+/**
+ * Converte um comando IR capturado para o JSON no formato esperado
+ * e enfileira na g_mqtt_tx_queue.
+ */
+static void enqueue_learned_ir_json(int cmd_index, const char *action_name, const ir_raw_command_t *cmd) {
+    if (g_mqtt_tx_queue == NULL) return;
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) return;
+
+    cJSON_AddNumberToObject(root, "comando", cmd_index);
+    cJSON_AddStringToObject(root, "action", action_name);
+    cJSON_AddNumberToObject(root, "length", cmd->length);
+
+    cJSON *raw_array = cJSON_CreateArray();
+    if (raw_array != NULL) {
+        for (int i = 0; i < cmd->length; i++) {
+            // Acessa o array 'data' pertencente à struct ir_raw_command_t
+            cJSON_AddItemToArray(raw_array, cJSON_CreateNumber(cmd->data[i]));
+        }
+        cJSON_AddItemToObject(root, "raw_data", raw_array);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str != NULL) {
+        mqtt_message_t tx_msg;
+        snprintf(tx_msg.payload, sizeof(tx_msg.payload), "%s", json_str);
+
+        if (xQueueSend(g_mqtt_tx_queue, &tx_msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+            ESP_LOGI(TAG, "Comando [%s] enfileirado para envio MQTT", action_name);
+        } else {
+            ESP_LOGE(TAG, "Fila TX de MQTT cheia! Falha ao enfileirar [%s]", action_name);
+        }
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(root);
 }
 
 // Rotina de aprendizado do Ar-Condicionado
@@ -122,12 +165,15 @@ static void run_ir_learning_routine(void) {
         // 3. Botão 2 (GPIO34): Gravar na NVS e passar para o próximo
         if (gpio_get_level(BUTTON_2_GPIO) != 0) {
             if (has_cmd) {
-                // Prepara chave válida para NVS (ex: "LIGAR", "18_C", etc)
                 char nvs_key[15];
                 snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", current_idx);
 
                 if (save_ir_to_nvs(nvs_key, &captured_cmd)) {
                     ESP_LOGI(TAG, "Comando [%s] gravado na NVS!", IR_ACTIONS[current_idx]);
+                    
+                    // Enfileira mensagem JSON na fila MQTT TX
+                    enqueue_learned_ir_json(current_idx, IR_ACTIONS[current_idx], &captured_cmd);
+
                     snprintf(display_buf, sizeof(display_buf), "%s\nCOMANDO OK!", IR_ACTIONS[current_idx]);
                 } else {
                     ESP_LOGE(TAG, "Erro ao salvar [%s] na NVS!", IR_ACTIONS[current_idx]);
@@ -157,7 +203,8 @@ static void run_ir_learning_routine(void) {
 
 // Task que consome as mensagens recebidas via MQTT
 static void mqtt_consumer_task(void *pvParameters) {
-    mqtt_message_t msg;
+    // Alocado estaticamente para NÃO consumir a pilha (stack) da task (economiza 2048 bytes de stack)
+    static mqtt_message_t msg;
     ESP_LOGI(TAG, "Task consumidora MQTT iniciada com sucesso.");
 
     while (1) {
@@ -180,7 +227,6 @@ static void mqtt_consumer_task(void *pvParameters) {
                     case CMD_TELEMETRY:
                         ESP_LOGI(TAG, "Tratando CMD_TELEMETRY");
                         display_show_text("CMD: TELEMETRIA");
-                        // TODO: Ler sensores e publicar respostas ACK/Telemetria
                         break;
 
                     case CMD_TELEMETRY_ACK:
@@ -190,7 +236,6 @@ static void mqtt_consumer_task(void *pvParameters) {
                     case CMD_EXECUTE_IR:
                         ESP_LOGI(TAG, "Tratando CMD_EXECUTE_IR");
                         display_show_text("CMD: EXECUTAR IR");
-                        // TODO: Buscar IR na NVS por índice e disparar via TX
                         break;
 
                     case CMD_EXECUTE_IR_ACK:
@@ -234,6 +279,26 @@ static void mqtt_consumer_task(void *pvParameters) {
     }
 }
 
+// Esvazia a fila de saída e envia todos os JSONs gravados via MQTT
+static void flush_mqtt_tx_queue(void) {
+    mqtt_message_t tx_msg;
+    int count = 0;
+
+    ESP_LOGI(TAG, "Esvaziando fila de comandos aprendidos para publicação...");
+
+    while (xQueueReceive(g_mqtt_tx_queue, &tx_msg, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (mqtt_publish_commands_json(tx_msg.payload, NULL)) {
+            count++;
+            ESP_LOGI(TAG, "Comando IR publicado via MQTT com sucesso (%d)", count);
+        } else {
+            ESP_LOGE(TAG, "Falha ao publicar comando IR via MQTT");
+        }
+        vTaskDelay(pdMS_TO_TICKS(200)); // Pequeno delay entre publicações
+    }
+
+    ESP_LOGI(TAG, "Total de comandos IR enviados ao broker: %d", count);
+}
+
 // Callback do Wi-Fi
 static void on_wifi_status_change(const char *title, const char *subtitle) {
     char buffer[64];
@@ -254,6 +319,11 @@ void app_main(void)
     display_power(true);
     buttons_init();
     ir_hardware_init();
+
+    g_mqtt_tx_queue = xQueueCreate(TOTAL_ACTIONS + 2, sizeof(mqtt_message_t));
+    if (g_mqtt_tx_queue == NULL) {
+        ESP_LOGE(TAG, "Falha ao criar fila TX MQTT!");
+    }
 
     // Se ligar com GPIO5 + GPIO34 pressionados
     if (check_learning_mode_trigger()) {
@@ -280,10 +350,13 @@ void app_main(void)
             // 3. Cria Fila e inicia a Task consumidora dos comandos
             g_mqtt_queue = xQueueCreate(10, sizeof(mqtt_message_t));
             if (g_mqtt_queue != NULL) {
-                xTaskCreate(mqtt_consumer_task, "mqtt_consumer_task", 4096, NULL, 5, NULL);
+                xTaskCreate(mqtt_consumer_task, "mqtt_consumer_task", 8192, NULL, 5, NULL);
             } else {
                 ESP_LOGE(TAG, "Falha ao criar fila MQTT!");
             }
+
+            // 4. Envia todos os comandos aprendidos via MQTT
+            flush_mqtt_tx_queue();
 
         } else {
             // Se falhar a conexão MQTT após 3 tentativas
