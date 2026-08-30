@@ -203,13 +203,17 @@ static void run_ir_learning_routine(void) {
 
 // Task que consome as mensagens recebidas via MQTT
 static void mqtt_consumer_task(void *pvParameters) {
-    // Alocado estaticamente para NÃO consumir a pilha (stack) da task (economiza 2048 bytes de stack)
+    // Alocado estaticamente para NÃO consumir a pilha (stack) da task
     static mqtt_message_t msg;
+    int inactivity_counter = 0;
+    
     ESP_LOGI(TAG, "Task consumidora MQTT iniciada com sucesso.");
 
     while (1) {
-        // Bloqueia aguardando pacotes na fila
-        if (xQueueReceive(g_mqtt_queue, &msg, portMAX_DELAY) == pdTRUE) {
+        // Aguarda pacote por no máximo 1 segundo (1000ms)
+        if (xQueueReceive(g_mqtt_queue, &msg, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            // Comando recebido: reseta o contador de inatividade
+            inactivity_counter = 0;
             ESP_LOGI(TAG, "Mensagem recebida da fila: %s", msg.payload);
 
             cJSON *json = cJSON_Parse(msg.payload);
@@ -275,6 +279,19 @@ static void mqtt_consumer_task(void *pvParameters) {
             }
 
             cJSON_Delete(json);
+        } else {
+            // Nenhum pacote recebido nos últimos 1000ms: incrementa o timer
+            inactivity_counter++;
+            ESP_LOGD(TAG, "Inatividade: %d/%d s", inactivity_counter, MQTT_INTERACTIVITY_TIMEOUT);
+
+            if (inactivity_counter >= MQTT_INTERACTIVITY_TIMEOUT) {
+                ESP_LOGW(TAG, "Tempo limite de inatividade (%d s) atingido. Encerrando task...", MQTT_INTERACTIVITY_TIMEOUT);
+                display_show_text("MQTT TIMEOUT\nTASK ENCERRADA");
+                
+                // Finaliza e remove a própria task da memória do FreeRTOS
+                // TODO: Botar esp32 para dormir aqui!
+                vTaskDelete(NULL);
+            }
         }
     }
 }
