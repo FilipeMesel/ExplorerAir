@@ -2,15 +2,18 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
-
+#include "cJSON.h"
 #include "config.h"
 #include "display.h"
 #include "wifi_handler.h"
 #include "ir_handler.h"
+#include "mqtt_handler.h"
+#include "explorer_protocol.h"
 
 static const char *TAG = "EXPLORER_MAIN";
 #define NVS_IR_NAMESPACE "ir_codes"
@@ -29,6 +32,9 @@ static const char *IR_ACTIONS[] = {
     "25 C"
 };
 #define TOTAL_ACTIONS (sizeof(IR_ACTIONS) / sizeof(IR_ACTIONS[0]))
+
+// Fila para mensagens MQTT recebidas
+QueueHandle_t g_mqtt_queue = NULL;
 
 // Configura os GPIOs dos botões
 static void buttons_init(void) {
@@ -149,6 +155,85 @@ static void run_ir_learning_routine(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 }
 
+// Task que consome as mensagens recebidas via MQTT
+static void mqtt_consumer_task(void *pvParameters) {
+    mqtt_message_t msg;
+    ESP_LOGI(TAG, "Task consumidora MQTT iniciada com sucesso.");
+
+    while (1) {
+        // Bloqueia aguardando pacotes na fila
+        if (xQueueReceive(g_mqtt_queue, &msg, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGI(TAG, "Mensagem recebida da fila: %s", msg.payload);
+
+            cJSON *json = cJSON_Parse(msg.payload);
+            if (json == NULL) {
+                ESP_LOGE(TAG, "Erro ao realizar parse do JSON MQTT");
+                continue;
+            }
+
+            cJSON *cmd_item = cJSON_GetObjectItem(json, "cmd_id");
+            if (cJSON_IsNumber(cmd_item)) {
+                command_id_t cmd_id = (command_id_t)cmd_item->valueint;
+                ESP_LOGI(TAG, "Processando Comando: [%s] (ID: %d)", get_cmd_display_name(cmd_id), cmd_id);
+
+                switch (cmd_id) {
+                    case CMD_TELEMETRY:
+                        ESP_LOGI(TAG, "Tratando CMD_TELEMETRY");
+                        display_show_text("CMD: TELEMETRIA");
+                        // TODO: Ler sensores e publicar respostas ACK/Telemetria
+                        break;
+
+                    case CMD_TELEMETRY_ACK:
+                        ESP_LOGI(TAG, "Tratando CMD_TELEMETRY_ACK");
+                        break;
+
+                    case CMD_EXECUTE_IR:
+                        ESP_LOGI(TAG, "Tratando CMD_EXECUTE_IR");
+                        display_show_text("CMD: EXECUTAR IR");
+                        // TODO: Buscar IR na NVS por índice e disparar via TX
+                        break;
+
+                    case CMD_EXECUTE_IR_ACK:
+                        ESP_LOGI(TAG, "Tratando CMD_EXECUTE_IR_ACK");
+                        break;
+
+                    case CMD_SET_SLEEP:
+                        ESP_LOGI(TAG, "Tratando CMD_SET_SLEEP");
+                        display_show_text("CMD: SET SLEEP");
+                        break;
+
+                    case CMD_SET_SLEEP_ACK:
+                        ESP_LOGI(TAG, "Tratando CMD_SET_SLEEP_ACK");
+                        break;
+
+                    case CMD_SYNC_LEARNED:
+                        ESP_LOGI(TAG, "Tratando CMD_SYNC_LEARNED");
+                        display_show_text("CMD: SYNC APREND");
+                        break;
+
+                    case CMD_SET_WIFI:
+                        ESP_LOGI(TAG, "Tratando CMD_SET_WIFI");
+                        display_show_text("CMD: CONFIG WIFI");
+                        break;
+
+                    case CMD_SET_WIFI_ACK:
+                        ESP_LOGI(TAG, "Tratando CMD_SET_WIFI_ACK");
+                        break;
+
+                    default:
+                        ESP_LOGW(TAG, "Comando desconhecido recebido: %d", cmd_id);
+                        display_show_text("CMD DESCONHECIDO");
+                        break;
+                }
+            } else {
+                ESP_LOGE(TAG, "Campo 'cmd_id' não encontrado no JSON");
+            }
+
+            cJSON_Delete(json);
+        }
+    }
+}
+
 // Callback do Wi-Fi
 static void on_wifi_status_change(const char *title, const char *subtitle) {
     char buffer[64];
@@ -183,8 +268,28 @@ void app_main(void)
 
     if (wifi_is_connected()) {
         ESP_LOGI(TAG, "Wi-Fi OK, RSSI: %d dBm", wifi_get_rssi());
-        display_show_text("CONECTADO");
-        // mqtt_init();
+        display_show_text("WIFI OK\nCONECTANDO MQTT");
+
+        // 2. Tenta conectar no MQTT 3 Vezes
+        if (mqtt_init_with_retry(3)) {
+            display_show_text("WIFI OK\nONLINE");
+
+            // Publica status no tópico e sobrescreve (Retain)
+            mqtt_publish_status("{\"status\":\"online\"}", true);
+
+            // 3. Cria Fila e inicia a Task consumidora dos comandos
+            g_mqtt_queue = xQueueCreate(10, sizeof(mqtt_message_t));
+            if (g_mqtt_queue != NULL) {
+                xTaskCreate(mqtt_consumer_task, "mqtt_consumer_task", 4096, NULL, 5, NULL);
+            } else {
+                ESP_LOGE(TAG, "Falha ao criar fila MQTT!");
+            }
+
+        } else {
+            // Se falhar a conexão MQTT após 3 tentativas
+            ESP_LOGE(TAG, "Erro na conexão MQTT!");
+            display_show_text("ERRO");
+        }
     } else {
         ESP_LOGE(TAG, "Exibindo ERRO WIFI no display...");
         display_show_text("ERRO WIFI");
