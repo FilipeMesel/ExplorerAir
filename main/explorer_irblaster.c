@@ -13,6 +13,7 @@
 #include "wifi_handler.h"
 #include "ir_handler.h"
 #include "mqtt_handler.h"
+#include "explorer_structs.h"
 #include "explorer_protocol.h"
 
 static const char *TAG = "EXPLORER_MAIN";
@@ -103,6 +104,38 @@ static bool save_wifi_credentials_to_nvs(const char *ssid, const char *password)
         ESP_LOGI(TAG, "Novas credenciais Wi-Fi salvas com sucesso!");
     } else {
         ESP_LOGE(TAG, "Erro ao salvar credenciais na NVS: %s", esp_err_to_name(err));
+    }
+
+    nvs_close(nvs_h);
+    return (err == ESP_OK);
+}
+
+/**
+ * Salva um agendamento na NVS baseado no seu schedule_id (0 a 9)
+ */
+static bool save_schedule_to_nvs(const schedule_t *sched) {
+    if (sched->schedule_id >= MAX_SCHEDULES) {
+        ESP_LOGE(TAG, "ID de agendamento inválido: %d (Máx: %d)", sched->schedule_id, MAX_SCHEDULES - 1);
+        return false;
+    }
+
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_SCHEDULE_NAMESPACE, NVS_READWRITE, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao abrir NVS para agendamentos: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    char key[16];
+    snprintf(key, sizeof(key), "sched_%d", sched->schedule_id);
+
+    err = nvs_set_blob(nvs_h, key, sched, sizeof(schedule_t));
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_h);
+        ESP_LOGI(TAG, "Agendamento [%s] ID %d salvo na NVS com sucesso! Days: 0x%02X, Time: %s, Action: %s",
+                 key, sched->schedule_id, sched->week_days, sched->time, sched->action);
+    } else {
+        ESP_LOGE(TAG, "Erro ao salvar agendamento %s na NVS: %s", key, esp_err_to_name(err));
     }
 
     nvs_close(nvs_h);
@@ -390,6 +423,63 @@ static void mqtt_consumer_task(void *pvParameters) {
                                 display_show_text("ERRO CREDENCIAIS");
                             }
                         }
+                        break;
+
+                        case CMD_SET_SCHEDULE:
+                        {
+                            ESP_LOGI(TAG, "Tratando CMD_SET_SCHEDULE");
+                            display_show_text("CMD: SET AGEND");
+
+                            cJSON *sched_id_item = cJSON_GetObjectItem(json, "schedule_id");
+                            cJSON *week_days_item = cJSON_GetObjectItem(json, "week_days");
+                            cJSON *time_item = cJSON_GetObjectItem(json, "time");
+                            cJSON *action_item = cJSON_GetObjectItem(json, "action");
+
+                            if (cJSON_IsNumber(sched_id_item) && cJSON_IsNumber(week_days_item) &&
+                                cJSON_IsString(time_item) && cJSON_IsString(action_item)) {
+
+                                int sched_id = sched_id_item->valueint;
+
+                                if (sched_id >= 0 && sched_id < MAX_SCHEDULES) {
+                                    schedule_t sched;
+                                    memset(&sched, 0, sizeof(schedule_t));
+                                    
+                                    sched.schedule_id = (uint8_t)sched_id;
+                                    sched.week_days = (uint8_t)week_days_item->valueint;
+                                    snprintf(sched.time, sizeof(sched.time), "%s", time_item->valuestring);
+                                    snprintf(sched.action, sizeof(sched.action), "%s", action_item->valuestring);
+
+                                    if (save_schedule_to_nvs(&sched)) {
+                                        char disp_msg[64];
+                                        snprintf(disp_msg, sizeof(disp_msg), "AGEND %d SALVO\n%s %s", sched_id, sched.time, sched.action);
+                                        display_show_text(disp_msg);
+
+                                        // 1. Prepara o ACK do Agendamento (cmd_id: 10)
+                                        mqtt_message_t ack_msg;
+                                        snprintf(ack_msg.payload, sizeof(ack_msg.payload),
+                                                 "{\"cmd_id\":%d,\"status\":\"OK\",\"schedule_id\":%d}",
+                                                 CMD_SET_SCHEDULE_ACK, sched_id);
+
+                                        // 2. Enfileira para envio via MQTT TX
+                                        if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
+                                            ESP_LOGE(TAG, "Falha ao enfileirar ACK do agendamento!");
+                                        }
+                                    } else {
+                                        display_show_text("ERRO SALVAR\nAGENDAMENTO");
+                                    }
+                                } else {
+                                    ESP_LOGE(TAG, "schedule_id %d fora do limite (0 a %d)", sched_id, MAX_SCHEDULES - 1);
+                                    display_show_text("ID AGEND INVALIDO");
+                                }
+                            } else {
+                                ESP_LOGE(TAG, "Campos ausentes/inválidos no JSON de Agendamento!");
+                                display_show_text("ERRO JSON AGEND");
+                            }
+                        }
+                        break;
+
+                    case CMD_SET_SCHEDULE_ACK:
+                        ESP_LOGI(TAG, "Tratando CMD_SET_SCHEDULE_ACK");
                         break;
 
                     default:

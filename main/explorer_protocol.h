@@ -14,7 +14,9 @@ typedef enum {
     CMD_SET_SLEEP_ACK    = 5, /**< Comando de confirmação de configuração de modo de sono */
     CMD_SYNC_LEARNED     = 6, /**< Comando para sincronizar comandos aprendidos */
     CMD_SET_WIFI         = 7, /**< Comando para configurar WiFi */
-    CMD_SET_WIFI_ACK     = 8 /**< Comando de confirmação de configuração de WiFi */
+    CMD_SET_WIFI_ACK     = 8, /**< Comando de confirmação de configuração de WiFi */
+    CMD_SET_SCHEDULE      = 9, /**< Comando para configurar agendamento */
+    CMD_SET_SCHEDULE_ACK  = 10 /**< Comando de confirmação de configuração de agendamento */
 } command_id_t;
 
 /**
