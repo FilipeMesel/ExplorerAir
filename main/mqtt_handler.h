@@ -3,12 +3,8 @@
 
 #include <stdbool.h>
 
-void wifi_connect_init(void);
-bool wifi_is_connected(void);
-bool wifi_is_failed(void);
-void wifi_reset_connection_state(void);
+void mqtt_init(void);
+bool mqtt_is_connected(void);
 bool mqtt_publish_commands_json(const char *json_payload, char *out_mac_str);
-bool wifi_save_nvs_credentials(const char *ssid, const char *pass);
-bool is_wifi_initialized(void);
 
-#endif
+#endif // MQTT_HANDLER_H

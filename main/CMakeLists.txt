@@ -3,6 +3,7 @@ idf_component_register(
         "explorer_irblaster.c"
         "display.c"
         "ir_handler.c"
+        "wifi_handler.c"
         "mqtt_handler.c"
     INCLUDE_DIRS 
         "."
