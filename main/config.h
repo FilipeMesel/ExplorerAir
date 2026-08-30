@@ -16,7 +16,7 @@
 
 // --- CONFIGURAÇÕES DE REDE
 #define WIFI_FALLBACK_SSID    "conectaSenFio"
-#define WIFI_FALLBACK_PASS    "12345678"
+#define WIFI_FALLBACK_PASS    "123456789"
 
 // --- CHAVES NVS PARA WI-FI ---
 #define NVS_WIFI_NAMESPACE    "wifi_cfg"

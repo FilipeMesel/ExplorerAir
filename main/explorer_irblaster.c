@@ -175,22 +175,18 @@ void app_main(void)
         run_ir_learning_routine();
     }
 
-    // Fluxo normal de inicialização do Wi-Fi
-    int total_attempts = 0;
-    const int max_attempts = 6;
-
-    while (total_attempts < max_attempts && !wifi_is_connected() && !wifi_is_failed()) {
-        total_attempts++;
-        ESP_LOGI(TAG, "Tentativa de conexão Wi-Fi global: %d/%d", total_attempts, max_attempts);
+    // Em app_main() dentro de main.c
+    if (!wifi_is_connected()) {
+        // Tenta 3x na rede do cliente e 3x na rede conectaSenFio
         wifi_connect_init(on_wifi_status_change);
-        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     if (wifi_is_connected()) {
-        ESP_LOGI(TAG, "Wi-Fi conectado com sucesso!");
+        ESP_LOGI(TAG, "Wi-Fi OK, RSSI: %d dBm", wifi_get_rssi());
         display_show_text("CONECTADO");
+        // mqtt_init();
     } else {
-        ESP_LOGE(TAG, "Falha permanente de Wi-Fi.");
+        ESP_LOGE(TAG, "Exibindo ERRO WIFI no display...");
         display_show_text("ERRO WIFI");
     }
 
