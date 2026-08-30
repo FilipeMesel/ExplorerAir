@@ -35,4 +35,7 @@
 #define CARRIER_FREQ_HZ      38000
 #define MAX_BUFFER_SYMBOLS   400
 
+// --- CONFIGURAÇÕES DE TEMPO ---
+#define MQTT_INTERACTIVITY_TIMEOUT  120 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
+
 #endif // CONFIG_H
