@@ -68,6 +68,21 @@ static bool save_ir_to_nvs(const char *key, const ir_raw_command_t *cmd) {
 }
 
 /**
+ * Busca um comando IR armazenado na NVS pela chave
+ */
+static bool load_ir_from_nvs(const char *key, ir_raw_command_t *cmd_out) {
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_IR_NAMESPACE, NVS_READONLY, &nvs_h);
+    if (err != ESP_OK) return false;
+
+    size_t required_size = sizeof(ir_raw_command_t);
+    err = nvs_get_blob(nvs_h, key, cmd_out, &required_size);
+    nvs_close(nvs_h);
+
+    return (err == ESP_OK);
+}
+
+/**
  * Grava as novas credenciais de Wi-Fi na NVS
  */
 static bool save_wifi_credentials_to_nvs(const char *ssid, const char *password) {
@@ -264,8 +279,65 @@ static void mqtt_consumer_task(void *pvParameters) {
                         break;
 
                     case CMD_EXECUTE_IR:
-                        ESP_LOGI(TAG, "Tratando CMD_EXECUTE_IR");
-                        display_show_text("CMD: EXECUTAR IR");
+                        {
+                            ESP_LOGI(TAG, "Tratando CMD_EXECUTE_IR");
+                            display_show_text("CMD: EXECUTAR IR");
+
+                            cJSON *action_item = cJSON_GetObjectItem(json, "action");
+                            if (cJSON_IsString(action_item) && action_item->valuestring != NULL) {
+                                const char *action_str = action_item->valuestring;
+                                int cmd_index = -1;
+
+                                // Mapeamento da string da 'action' recebida para o índice NVS
+                                if (strcmp(action_str, "LIGAR") == 0) {
+                                    cmd_index = 0;
+                                } else if (strcmp(action_str, "DESLIGAR") == 0) {
+                                    cmd_index = 1;
+                                } else if (strncmp(action_str, "SET_TEMP_", 9) == 0) {
+                                    int temp = atoi(&action_str[9]); // Extrai o valor numérico após "SET_TEMP_"
+                                    if (temp >= 18 && temp <= 25) {
+                                        // Índices 2 a 9 mapeiam para as temperaturas 18°C a 25°C
+                                        cmd_index = 2 + (temp - 18);
+                                    }
+                                }
+
+                                if (cmd_index >= 0) {
+                                    char nvs_key[15];
+                                    snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", cmd_index);
+
+                                    ir_raw_command_t ir_cmd;
+                                    if (load_ir_from_nvs(nvs_key, &ir_cmd)) {
+                                        ESP_LOGI(TAG, "Enviando sinal IR para [%s] (Chave NVS: %s)...", action_str, nvs_key);
+                                        
+                                        // Dispara o sinal infravermelho via hardware
+                                        ir_send_command(&ir_cmd);
+
+                                        char disp_msg[64];
+                                        snprintf(disp_msg, sizeof(disp_msg), "IR ENVIADO:\n%s", action_str);
+                                        display_show_text(disp_msg);
+
+                                        // Prepara e envia o ACK de execução IR (cmd_id: 4)
+                                        mqtt_message_t ack_msg;
+                                        snprintf(ack_msg.payload, sizeof(ack_msg.payload),
+                                                "{\"cmd_id\":%d,\"status\":\"OK\",\"action\":\"%s\"}", CMD_EXECUTE_IR_ACK, action_str);
+
+                                        if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
+                                            ESP_LOGE(TAG, "Falha ao enfileirar ACK de execução IR!");
+                                        }
+
+                                    } else {
+                                        ESP_LOGE(TAG, "Comando IR '%s' não encontrado na NVS (Chave: %s)", action_str, nvs_key);
+                                        display_show_text("IR NAO GRAVADO");
+                                    }
+                                } else {
+                                    ESP_LOGE(TAG, "Ação IR inválida ou não suportada: %s", action_str);
+                                    display_show_text("ACAO IR INVALIDA");
+                                }
+                            } else {
+                                ESP_LOGE(TAG, "Campo 'action' ausente ou inválido no JSON!");
+                                display_show_text("ERRO JSON IR");
+                            }
+                        }
                         break;
 
                     case CMD_EXECUTE_IR_ACK:
@@ -306,7 +378,7 @@ static void mqtt_consumer_task(void *pvParameters) {
                                     snprintf(ack_msg.payload, sizeof(ack_msg.payload),
                                             "{\"cmd_id\":%d,\"status\":\"OK\"}", CMD_SET_WIFI_ACK);
 
-                                    if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+                                    if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
                                         ESP_LOGE(TAG, "Falha ao enfileirar ACK de Wi-Fi!");
                                     }
 
