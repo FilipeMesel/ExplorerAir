@@ -131,28 +131,54 @@ void display_clear(void) {
 }
 
 void display_show_text(const char *str) {
-    display_clear();
-    int x = 0, page = 3;
+    memset(frame_buffer, 0x00, sizeof(frame_buffer));
+    
+    // Começa na página 2 (linha de cima) para centralizar verticalmente as 2 linhas
+    int page = 2;
+    int x = 0;
 
-    // Centraliza o texto horizontalmente caso seja menor que a largura do display
-    int len = strlen(str);
-    if (len * 8 < 128) {
-        x = (128 - (len * 8)) / 2;
+    // Calcula a largura da linha atual para centralizar horizontalmente
+    const char *line_start = str;
+    int line_len = 0;
+    while (line_start[line_len] != '\0' && line_start[line_len] != '\n') {
+        line_len++;
+    }
+    if (line_len * 8 < 128) {
+        x = (128 - (line_len * 8)) / 2;
     }
 
-    while (*str && x <= (128 - 8)) {
-        uint8_t c = (uint8_t)*str;
-        
-        // Mapeia caracteres ASCII válidos (32 a 126)
-        if (c >= 32 && c <= 126) {
-            uint8_t font_idx = c - 32;
-            for (int i = 0; i < 8; i++) {
-                frame_buffer[(page * 128) + x + i] = font8x8[font_idx][i];
+    while (*str) {
+        // Trata a quebra de linha \n
+        if (*str == '\n') {
+            page += 2; // Pula 2 páginas (16 pixels) para a linha de baixo
+            if (page > 6) break; // Evita estourar o limite inferior do display
+
+            // Recalcula o alinhamento horizontal para a segunda linha
+            const char *next_line = str + 1;
+            line_len = 0;
+            while (next_line[line_len] != '\0' && next_line[line_len] != '\n') {
+                line_len++;
             }
+            x = (line_len * 8 < 128) ? (128 - (line_len * 8)) / 2 : 0;
+
+            str++;
+            continue;
         }
-        x += 8;
+
+        // Renderiza o caractere se ainda couber na largura do display
+        if (x <= (128 - 8)) {
+            uint8_t c = (uint8_t)*str;
+            if (c >= 32 && c <= 126) {
+                uint8_t font_idx = c - 32;
+                for (int i = 0; i < 8; i++) {
+                    frame_buffer[(page * 128) + x + i] = font8x8[font_idx][i];
+                }
+            }
+            x += 8;
+        }
         str++;
     }
+
     oled_update_screen();
 }
 

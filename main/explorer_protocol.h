@@ -14,7 +14,9 @@ typedef enum {
     CMD_SET_SLEEP_ACK    = 5, /**< Comando de confirmação de configuração de modo de sono */
     CMD_SYNC_LEARNED     = 6, /**< Comando para sincronizar comandos aprendidos */
     CMD_SET_WIFI         = 7, /**< Comando para configurar WiFi */
-    CMD_SET_WIFI_ACK     = 8 /**< Comando de confirmação de configuração de WiFi */
+    CMD_SET_WIFI_ACK     = 8, /**< Comando de confirmação de configuração de WiFi */
+    CMD_SET_SCHEDULE      = 9, /**< Comando para configurar agendamento */
+    CMD_SET_SCHEDULE_ACK  = 10 /**< Comando de confirmação de configuração de agendamento */
 } command_id_t;
 
 /**
@@ -24,16 +26,18 @@ typedef enum {
  */
 static const char* get_cmd_display_name(int cmd_id) {
     switch (cmd_id) {
-        case CMD_TELEMETRY:      return "TELEMETRIA";       /**< Comando de telemetria */
-        case CMD_TELEMETRY_ACK:  return "TELEMETRIA OK";    /**< Comando de confirmação de telemetria */
-        case CMD_EXECUTE_IR:     return "EXECUTANDO IR";    /**< Comando para executar comando IR */
-        case CMD_EXECUTE_IR_ACK: return "IR ENVIADO";       /**< Comando de confirmação de execução de comando IR */
-        case CMD_SET_SLEEP:      return "CONFIG SLEEP";     /**< Comando para configurar modo de sono */
-        case CMD_SET_SLEEP_ACK:  return "SLEEP OK";         /**< Comando de confirmação de configuração de modo de sono */
-        case CMD_SYNC_LEARNED:   return "ENVIANDO APREND";  /**< Comando para sincronizar comandos aprendidos */
-        case CMD_SET_WIFI:       return "CONFIG WIFI";      /**< Comando para configurar WiFi */
-        case CMD_SET_WIFI_ACK:   return "WIFI CONFIG OK";   /**< Comando de confirmação de configuração de WiFi */
-        default:                 return "CMD DESCONHECIDO"; /** < Comando desconhecido */
+        case CMD_TELEMETRY:         return "TELEMETRIA";       /**< Comando de telemetria */
+        case CMD_TELEMETRY_ACK:     return "TELEMETRIA OK";    /**< Comando de confirmação de telemetria */
+        case CMD_EXECUTE_IR:        return "EXECUTANDO IR";    /**< Comando para executar comando IR */
+        case CMD_EXECUTE_IR_ACK:    return "IR ENVIADO";       /**< Comando de confirmação de execução de comando IR */
+        case CMD_SET_SLEEP:         return "CONFIG SLEEP";     /**< Comando para configurar modo de sono */
+        case CMD_SET_SLEEP_ACK:     return "SLEEP OK";         /**< Comando de confirmação de configuração de modo de sono */
+        case CMD_SYNC_LEARNED:      return "ENVIANDO APREND";  /**< Comando para sincronizar comandos aprendidos */
+        case CMD_SET_WIFI:          return "CONFIG WIFI";      /**< Comando para configurar WiFi */
+        case CMD_SET_WIFI_ACK:      return "WIFI CONFIG OK";   /**< Comando de confirmação de configuração de WiFi */
+        case CMD_SET_SCHEDULE:      return "CONFIG AGEND";     /**< Comando para configurar agendamento */
+        case CMD_SET_SCHEDULE_ACK:  return "AGEND CONFIG OK"; /**< Comando de confirmação de configuração de agendamento */
+        default:                    return "CMD DESCONHECIDO"; /** < Comando desconhecido */
     }
 }
 

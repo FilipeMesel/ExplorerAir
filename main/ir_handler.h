@@ -4,11 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "driver/rmt_rx.h"
-
-typedef struct {
-    uint16_t data[200];
-    size_t length;
-} ir_raw_command_t;
+#include "explorer_structs.h"
 
 void ir_hardware_init(void);
 bool ir_read_last_command(ir_raw_command_t *cmd_out);
