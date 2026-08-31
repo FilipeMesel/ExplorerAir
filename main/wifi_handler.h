@@ -1,44 +1,62 @@
+/**
+ * @file wifi_handler.h
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the function declarations for handling Wi-Fi communication in the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #ifndef WIFI_HANDLER_H
 #define WIFI_HANDLER_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-// Callback para notificar progresso no display (ex: "WIFI CLIENTE", "TENTATIVA 1/3")
+/**
+ * @brief Callback function type for reporting Wi-Fi connection status.
+ * It checks if the Wi-Fi connection is successful or failed and provides a title and subtitle for display purposes.
+ * @param title The title of the status message (e.g., "WIFI OK", "ERRO WIFI")
+ * @param subtitle The subtitle of the status message (e.g., "CONECTADO", "FALHA CONEXAO")
+ * 
+ */
 typedef void (*wifi_status_cb_t)(const char *title, const char *subtitle);
 
 /**
- * @brief Inicializa a pilha de rede e gerencia o ciclo de até 6 tentativas de conexão:
- *        - 3 Tentativas na rede do Cliente (salva na NVS)
- *        - 3 Tentativas na rede Fallback ("conectaSenFio")
+ * @brief Initializes the Wi-Fi connection process with a callback for status updates.
+ * The function attempts to connect to Wi-Fi networks in the following order:
+ *        - 3 Times with the client's network (saved in NVS)
+ *        - 3 Times on the Fallback network ("conectaSenFio")
  * 
- * @param cb Callback de status para atualizar o display OLED em tempo real.
+ * @param cb Callback for status updates to refresh the OLED display in real-time.
  */
 void wifi_connect_init(wifi_status_cb_t cb);
 
 /**
- * @brief Retorna se o ESP32 está conectado ao Wi-Fi e com IP válido.
+ * @brief Returns whether the ESP32 is connected to Wi-Fi and has a valid IP address.
  */
 bool wifi_is_connected(void);
 
 /**
- * @brief Retorna se a rotina de tentativas esgotou (6 tentativas sem sucesso).
+ * @brief Returns whether the retry routine has been exhausted (6 attempts without success).
  */
 bool wifi_is_failed(void);
 
 /**
- * @brief Obtém o valor do RSSI (potência do sinal) da conexão atual em dBm.
+ * @brief Get the RSSI (Received Signal Strength Indicator) of the currently connected Wi-Fi network.
  * 
- * @return int8_t Valor do RSSI (ex: -65). Retorna 0 se não estiver conectado.
+ * @return RSSI value in dBm if connected, or 0 if not connected or if an error occurs.
  */
 int8_t wifi_get_rssi(void);
 
 /**
- * @brief Salva as credenciais do Wi-Fi do cliente na NVS.
+ * @brief Save the Wi-Fi credentials (SSID and password) to non-volatile storage (NVS).
  * 
- * @param ssid Nome da rede Wi-Fi.
- * @param password Senha da rede Wi-Fi.
- * @return true se salvou com sucesso.
+ * @param ssid Wi-Fi SSID (network name).
+ * @param password Wi-Fi password.
+ * @return true if saved successfully.
  */
 bool wifi_save_credentials(const char *ssid, const char *password);
 
