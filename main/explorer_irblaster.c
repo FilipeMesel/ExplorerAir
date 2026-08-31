@@ -5,9 +5,9 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
-#include "nvs.h"
 #include "cJSON.h"
+
+#include "explorer_memory.h"
 #include "config.h"
 #include "display.h"
 #include "wifi_handler.h"
@@ -52,114 +52,6 @@ static void buttons_init(void) {
 // Checa se ambos os botões foram pressionados no boot
 static bool check_learning_mode_trigger(void) {
     return (gpio_get_level(BUTTON_1_GPIO) != 0) && (gpio_get_level(BUTTON_2_GPIO) != 0);
-}
-
-// Salva o buffer raw do IR na NVS
-static bool save_ir_to_nvs(const char *key, const ir_raw_command_t *cmd) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_IR_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    err = nvs_set_blob(nvs_h, key, cmd, sizeof(ir_raw_command_t));
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-    }
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
-}
-
-/**
- * Busca um comando IR armazenado na NVS pela chave
- */
-static bool load_ir_from_nvs(const char *key, ir_raw_command_t *cmd_out) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_IR_NAMESPACE, NVS_READONLY, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    size_t required_size = sizeof(ir_raw_command_t);
-    err = nvs_get_blob(nvs_h, key, cmd_out, &required_size);
-    nvs_close(nvs_h);
-
-    return (err == ESP_OK);
-}
-
-/**
- * Grava as novas credenciais de Wi-Fi na NVS
- */
-static bool save_wifi_credentials_to_nvs(const char *ssid, const char *password) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_WIFI_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro ao abrir NVS para Wi-Fi: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = nvs_set_str(nvs_h, "ssid", ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs_h, "password", password);
-    }
-
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-        ESP_LOGI(TAG, "Novas credenciais Wi-Fi salvas com sucesso!");
-    } else {
-        ESP_LOGE(TAG, "Erro ao salvar credenciais na NVS: %s", esp_err_to_name(err));
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
-}
-
-/**
- * Busca um agendamento armazenado na NVS pelo schedule_id (0 a 9)
- */
-static bool load_schedule_from_nvs(uint8_t schedule_id, schedule_t *sched_out) {
-    if (schedule_id >= MAX_SCHEDULES || sched_out == NULL) return false;
-
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_SCHEDULE_NAMESPACE, NVS_READONLY, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    char key[16];
-    snprintf(key, sizeof(key), "sched_%d", schedule_id);
-
-    size_t required_size = sizeof(schedule_t);
-    err = nvs_get_blob(nvs_h, key, sched_out, &required_size);
-    nvs_close(nvs_h);
-
-    return (err == ESP_OK);
-}
-
-/**
- * Salva um agendamento na NVS baseado no seu schedule_id (0 a 9)
- */
-static bool save_schedule_to_nvs(const schedule_t *sched) {
-    if (sched->schedule_id >= MAX_SCHEDULES) {
-        ESP_LOGE(TAG, "ID de agendamento inválido: %d (Máx: %d)", sched->schedule_id, MAX_SCHEDULES - 1);
-        return false;
-    }
-
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_SCHEDULE_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro ao abrir NVS para agendamentos: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    char key[16];
-    snprintf(key, sizeof(key), "sched_%d", sched->schedule_id);
-
-    err = nvs_set_blob(nvs_h, key, sched, sizeof(schedule_t));
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-        ESP_LOGI(TAG, "Agendamento [%s] ID %d salvo na NVS com sucesso! Days: 0x%02X, Time: %s, Action: %s",
-                 key, sched->schedule_id, sched->week_days, sched->time, sched->action);
-    } else {
-        ESP_LOGE(TAG, "Erro ao salvar agendamento %s na NVS: %s", key, esp_err_to_name(err));
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
 }
 
 /**
@@ -242,7 +134,7 @@ void check_and_run_schedules(void) {
 
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         schedule_t sched;
-        if (load_schedule_from_nvs((uint8_t)i, &sched)) {
+        if (explorer_memory_load_schedule((uint8_t)i, &sched)) {
 
             // Caso o Bit 0 não seja usado no backend para Enable, valide apenas o dia da semana:
             bool is_enabled = (sched.week_days & 0x01) != 0; // Exige Bit 0 alto
@@ -285,11 +177,8 @@ void check_and_run_schedules(void) {
         }
 
         if (cmd_index >= 0) {
-            char nvs_key[15];
-            snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", cmd_index);
-
             ir_raw_command_t ir_cmd;
-            if (load_ir_from_nvs(nvs_key, &ir_cmd)) {
+            if (explorer_memory_load_ir(cmd_index, &ir_cmd)) {
                 ESP_LOGI(TAG, "Disparando sinal IR do agendamento para [%s]...", best_sched.action);
                 
                 ir_send_command(&ir_cmd);
@@ -298,7 +187,7 @@ void check_and_run_schedules(void) {
                 snprintf(disp_msg, sizeof(disp_msg), "AGEND EXECUTADO:\n%s", best_sched.action);
                 display_show_text(disp_msg);
             } else {
-                ESP_LOGE(TAG, "Comando IR do agendamento não encontrado na NVS (Chave: %s)", nvs_key);
+                ESP_LOGE(TAG, "Agendamento [%s] não possui comando IR gravado na NVS!", best_sched.action);
                 display_show_text("AGEND: IR NAO\nENCONTRADO");
             }
         } else {
@@ -402,10 +291,7 @@ static void run_ir_learning_routine(void) {
         // 3. Botão 2 (GPIO34): Gravar na NVS e passar para o próximo
         if (gpio_get_level(BUTTON_2_GPIO) != 0) {
             if (has_cmd) {
-                char nvs_key[15];
-                snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", current_idx);
-
-                if (save_ir_to_nvs(nvs_key, &captured_cmd)) {
+                if (explorer_memory_save_ir(current_idx, &captured_cmd)) {
                     ESP_LOGI(TAG, "Comando [%s] gravado na NVS!", IR_ACTIONS[current_idx]);
                     
                     // Enfileira mensagem JSON na fila MQTT TX
@@ -498,12 +384,9 @@ static void mqtt_consumer_task(void *pvParameters) {
                                 }
 
                                 if (cmd_index >= 0) {
-                                    char nvs_key[15];
-                                    snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", cmd_index);
-
                                     ir_raw_command_t ir_cmd;
-                                    if (load_ir_from_nvs(nvs_key, &ir_cmd)) {
-                                        ESP_LOGI(TAG, "Enviando sinal IR para [%s] (Chave NVS: %s)...", action_str, nvs_key);
+                                    if (explorer_memory_load_ir(cmd_index, &ir_cmd)) {
+                                        ESP_LOGI(TAG, "Disparando comando IR [%s] (Índice: %d) via hardware...", action_str, cmd_index);
                                         
                                         // Dispara o sinal infravermelho via hardware
                                         ir_send_command(&ir_cmd);
@@ -522,7 +405,7 @@ static void mqtt_consumer_task(void *pvParameters) {
                                         }
 
                                     } else {
-                                        ESP_LOGE(TAG, "Comando IR '%s' não encontrado na NVS (Chave: %s)", action_str, nvs_key);
+                                        ESP_LOGE(TAG, "Comando IR '%s' não encontrado na NVS (Índice: %d)", action_str, cmd_index);
                                         display_show_text("IR NAO GRAVADO");
                                     }
                                 } else {
@@ -567,7 +450,7 @@ static void mqtt_consumer_task(void *pvParameters) {
 
                                 display_show_text("SALVANDO WIFI...");
 
-                                if (save_wifi_credentials_to_nvs(ssid_item->valuestring, pass_item->valuestring)) {
+                                if (explorer_memory_save_wifi_credentials(ssid_item->valuestring, pass_item->valuestring)) {
                                     display_show_text("WIFI ATUALIZADO");
                                     // 1. Prepara e envia a mensagem ACK para a fila TX
                                     mqtt_message_t ack_msg;
@@ -612,7 +495,7 @@ static void mqtt_consumer_task(void *pvParameters) {
                                     snprintf(sched.time, sizeof(sched.time), "%s", time_item->valuestring);
                                     snprintf(sched.action, sizeof(sched.action), "%s", action_item->valuestring);
 
-                                    if (save_schedule_to_nvs(&sched)) {
+                                    if (explorer_memory_save_schedule(&sched)) {
                                         char disp_msg[64];
                                         snprintf(disp_msg, sizeof(disp_msg), "AGEND %d SALVO\n%s %s", sched_id, sched.time, sched.action);
                                         display_show_text(disp_msg);
@@ -719,12 +602,13 @@ static void on_wifi_status_change(const char *title, const char *subtitle) {
 
 void app_main(void)
 {
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NEW_VERSION_FOUND || ret == ESP_ERR_NVS_NO_FREE_PAGES) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    if (!explorer_memory_init()) {
+        ESP_LOGE(TAG, "Falha ao inicializar a memória!");
+        display_init();
+        display_power(true);
+        display_show_text("MEM ERROR");
+        return;
     }
-    ESP_ERROR_CHECK(ret);
 
     display_init();
     display_power(true);

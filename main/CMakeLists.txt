@@ -5,6 +5,7 @@ idf_component_register(
         "ir_handler.c"
         "wifi_handler.c"
         "mqtt_handler.c"
+        "explorer_memory.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -17,3 +18,11 @@ idf_component_register(
         esp_event       # Loop de Eventos
         espressif__mqtt # Componente MQTT
 )
+
+if(ENABLE_FRAM_STORAGE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE _INCLUDE_FRAM_)
+    message(STATUS "[main] Persistência: FRAM (_INCLUDE_FRAM_)")
+else()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE _INCLUDE_NVS_)
+    message(STATUS "[main] Persistência: NVS (_INCLUDE_NVS_)")
+endif()
