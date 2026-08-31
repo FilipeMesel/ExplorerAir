@@ -54,8 +54,10 @@
 #define MAX_BUFFER_SYMBOLS   400        /**Maximum buffer symbols */
 
 // --- TIME SETTINGS  ---
-#define MQTT_INTERACTIVITY_TIMEOUT          30  /**MQTT Interactivity Timeout in seconds */
-#define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS     100 /**Timeout for sending messages in the MQTT TX queue */
+#define MQTT_INTERACTIVITY_TIMEOUT              30  /**MQTT Interactivity Timeout in seconds */
+#define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS         100 /**Timeout for sending messages in the MQTT TX queue */
+#define MQTT_TX_QUEUE_RECEIVE_TIMOUT_TICKS      1000 /**Timeout for receiving messages in the MQTT TX queue */
+#define MQTT_EVENT_GROUPS_WAIT_BITS_TIMEOUT_MS  5000 /**Timeout for waiting on MQTT event groups in milliseconds */
 
 // --- SCHEDULE SETTINGS ---
 #define MAX_SCHEDULES 10                        /**Maximum number of schedules */
