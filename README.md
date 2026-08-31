@@ -146,7 +146,7 @@ To prevent missing back-to-back schedules in consecutive minutes:
 
 * Upcoming Alarm Today: The sleep timer wakes the chip at second 00 of the target minute:
 
-$$\text{sleep\_seconds} = (min\_future\_minutes - current\_minutes) \times 60 - now\_tm.tm\_sec$$
+$$\text{sleep\_seconds} = (\text{min\_future\_minutes} - \text{current\_minutes}) \times 60 - \text{now\_tm.tm\_sec}$$
 
 A safety threshold enforces a minimum sleep time of 5 seconds.
 
