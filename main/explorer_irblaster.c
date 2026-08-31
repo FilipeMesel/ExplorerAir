@@ -5,9 +5,9 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
-#include "nvs.h"
 #include "cJSON.h"
+
+#include "explorer_memory.h"
 #include "config.h"
 #include "display.h"
 #include "wifi_handler.h"
@@ -15,6 +15,7 @@
 #include "mqtt_handler.h"
 #include "explorer_structs.h"
 #include "explorer_protocol.h"
+#include "explorer_rtc.h"
 
 static const char *TAG = "EXPLORER_MAIN";
 
@@ -54,208 +55,37 @@ static bool check_learning_mode_trigger(void) {
     return (gpio_get_level(BUTTON_1_GPIO) != 0) && (gpio_get_level(BUTTON_2_GPIO) != 0);
 }
 
-// Salva o buffer raw do IR na NVS
-static bool save_ir_to_nvs(const char *key, const ir_raw_command_t *cmd) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_IR_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    err = nvs_set_blob(nvs_h, key, cmd, sizeof(ir_raw_command_t));
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-    }
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
-}
-
-/**
- * Busca um comando IR armazenado na NVS pela chave
- */
-static bool load_ir_from_nvs(const char *key, ir_raw_command_t *cmd_out) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_IR_NAMESPACE, NVS_READONLY, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    size_t required_size = sizeof(ir_raw_command_t);
-    err = nvs_get_blob(nvs_h, key, cmd_out, &required_size);
-    nvs_close(nvs_h);
-
-    return (err == ESP_OK);
-}
-
-/**
- * Grava as novas credenciais de Wi-Fi na NVS
- */
-static bool save_wifi_credentials_to_nvs(const char *ssid, const char *password) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_WIFI_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro ao abrir NVS para Wi-Fi: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = nvs_set_str(nvs_h, "ssid", ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs_h, "password", password);
-    }
-
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-        ESP_LOGI(TAG, "Novas credenciais Wi-Fi salvas com sucesso!");
-    } else {
-        ESP_LOGE(TAG, "Erro ao salvar credenciais na NVS: %s", esp_err_to_name(err));
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
-}
-
-/**
- * Busca um agendamento armazenado na NVS pelo schedule_id (0 a 9)
- */
-static bool load_schedule_from_nvs(uint8_t schedule_id, schedule_t *sched_out) {
-    if (schedule_id >= MAX_SCHEDULES || sched_out == NULL) return false;
-
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_SCHEDULE_NAMESPACE, NVS_READONLY, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    char key[16];
-    snprintf(key, sizeof(key), "sched_%d", schedule_id);
-
-    size_t required_size = sizeof(schedule_t);
-    err = nvs_get_blob(nvs_h, key, sched_out, &required_size);
-    nvs_close(nvs_h);
-
-    return (err == ESP_OK);
-}
-
-/**
- * Salva um agendamento na NVS baseado no seu schedule_id (0 a 9)
- */
-static bool save_schedule_to_nvs(const schedule_t *sched) {
-    if (sched->schedule_id >= MAX_SCHEDULES) {
-        ESP_LOGE(TAG, "ID de agendamento inválido: %d (Máx: %d)", sched->schedule_id, MAX_SCHEDULES - 1);
-        return false;
-    }
-
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_SCHEDULE_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro ao abrir NVS para agendamentos: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    char key[16];
-    snprintf(key, sizeof(key), "sched_%d", sched->schedule_id);
-
-    err = nvs_set_blob(nvs_h, key, sched, sizeof(schedule_t));
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-        ESP_LOGI(TAG, "Agendamento [%s] ID %d salvo na NVS com sucesso! Days: 0x%02X, Time: %s, Action: %s",
-                 key, sched->schedule_id, sched->week_days, sched->time, sched->action);
-    } else {
-        ESP_LOGE(TAG, "Erro ao salvar agendamento %s na NVS: %s", key, esp_err_to_name(err));
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
-}
-
 /**
  * Sincroniza a hora (NTP) e dispara diretamente o sinal IR do agendamento 
  * retido mais próximo do horário atual.
  */
-#include "esp_sntp.h"
-#include <time.h>
-// Flag para controle de sincronização via callback
-static volatile bool g_time_synced = false;
-
-static void time_sync_notification_cb(struct timeval *tv) {
-    ESP_LOGI(TAG, "Notificação NTP: Hora sincronizada com sucesso!");
-    g_time_synced = true;
-}
-
-/**
- * Sincroniza a hora (NTP) e dispara diretamente o sinal IR do agendamento 
- * retido mais próximo do horário atual.
- */
-void check_and_run_schedules(void) {
-    // --- 1. SINCRONIZAÇÃO NTP ---
-    ESP_LOGI(TAG, "Sincronizando hora via NTP...");
-    display_show_text("SINCRONIZANDO\nHORA (NTP)...");
-
-    g_time_synced = false;
-
-    if (esp_sntp_enabled()) {
-        esp_sntp_stop();
-    }
-
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    
-    // Registra callback de notificação de sincronização
-    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
-
-    // Servidores NTP públicos e locais
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "a.st1.ntp.br");
-    esp_sntp_setservername(2, "time.google.com");
-    
-    esp_sntp_init();
-
-    // Configura o Fuso Horário Brasil (UTC-3)
-    setenv("TZ", "BRT3", 1);
-    tzset();
-
-    int retry = 0;
-    const int retry_count = 15;
-
-    // Loop aguarda a callback setar a flag ou estouro de timeout
-    while (!g_time_synced && ++retry <= retry_count) {
-        ESP_LOGI(TAG, "Aguardando sincronização NTP... (%d/%d)", retry, retry_count);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-
-    if (!g_time_synced) {
-        ESP_LOGE(TAG, "Falha ao sincronizar NTP. Agendamentos ignorados.");
-        display_show_text("ERRO SINC NTP");
-        return;
-    }
-
-    // --- 2. AVALIAÇÃO DOS AGENDAMENTOS ---
-    time_t now;
+bool check_and_run_schedules(void) {
     struct tm timeinfo;
-    time(&now);
-    localtime_r(&now, &timeinfo);
+    if (!rtc_manager_get_time(&timeinfo)) {
+        ESP_LOGE(TAG, "RTC sem hora válida. Ignorando agendamentos.");
+        return false;
+    }
 
-    ESP_LOGI(TAG, "Hora NTP obtida com sucesso: %02d:%02d:%02d (Dia da semana: %d)",
-             timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_wday);
-
-    // Bit 0 = Enable. Bits 1 a 7 = Dom, Seg, Ter, Qua, Qui, Sex, Sáb
-    // tm_wday varia de 0 (Dom) a 6 (Sáb). Então Domingo usa o deslocamento 1.
-    uint8_t today_bit = (1 << (timeinfo.tm_wday + 1)); 
+    uint8_t today_bit = (1 << (timeinfo.tm_wday + 1)); // Dom=1, Seg=2, ...
     int current_minutes = (timeinfo.tm_hour * 60) + timeinfo.tm_min;
 
     int best_schedule_id = -1;
     int max_passed_minutes = -1;
     schedule_t best_sched;
 
+    // --- Varre os agendamentos da NVS ---
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         schedule_t sched;
-        if (load_schedule_from_nvs((uint8_t)i, &sched)) {
-
-            // Caso o Bit 0 não seja usado no backend para Enable, valide apenas o dia da semana:
-            bool is_enabled = (sched.week_days & 0x01) != 0; // Exige Bit 0 alto
+        if (explorer_memory_load_schedule((uint8_t)i, &sched)) {
+            bool is_enabled = (sched.week_days & 0x01) != 0;
             bool is_today   = (sched.week_days & today_bit) != 0;
-
-            ESP_LOGI(TAG, "Sched %d -> Enable: %d | IsToday: %d (Mask: 0x%02X, TodayBit: 0x%02X)",
-                     i, is_enabled, is_today, sched.week_days, today_bit);
 
             if (is_enabled && is_today) {
                 int sched_hour = 0, sched_min = 0;
                 sscanf(sched.time, "%d:%d", &sched_hour, &sched_min);
                 int sched_minutes = (sched_hour * 60) + sched_min;
 
+                // Seleciona o agendamento mais recente que já passou (ou que é o atual)
                 if (sched_minutes <= current_minutes) {
                     if (sched_minutes > max_passed_minutes) {
                         max_passed_minutes = sched_minutes;
@@ -267,45 +97,41 @@ void check_and_run_schedules(void) {
         }
     }
 
-    // --- 3. EXECUÇÃO DIRETA DO COMANDO IR VIA HARDWARE ---
+    // --- Executa o agendamento recuperado/atual ---
     if (best_schedule_id != -1) {
-        ESP_LOGI(TAG, "Agendamento selecionado: ID %d [%s] - Ação: %s",
+        ESP_LOGI(TAG, "Agendamento válido encontrado: ID %d [%s] - Ação: %s",
                  best_schedule_id, best_sched.time, best_sched.action);
 
-        int cmd_index = -1;
-        if (strcmp(best_sched.action, "LIGAR") == 0) {
-            cmd_index = 0;
-        } else if (strcmp(best_sched.action, "DESLIGAR") == 0) {
-            cmd_index = 1;
-        } else if (strncmp(best_sched.action, "SET_TEMP_", 9) == 0) {
-            int temp = atoi(&best_sched.action[9]);
-            if (temp >= 18 && temp <= 25) {
-                cmd_index = 2 + (temp - 18);
-            }
-        }
-
-        if (cmd_index >= 0) {
-            char nvs_key[15];
-            snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", cmd_index);
-
-            ir_raw_command_t ir_cmd;
-            if (load_ir_from_nvs(nvs_key, &ir_cmd)) {
-                ESP_LOGI(TAG, "Disparando sinal IR do agendamento para [%s]...", best_sched.action);
-                
-                ir_send_command(&ir_cmd);
-
-                char disp_msg[64];
-                snprintf(disp_msg, sizeof(disp_msg), "AGEND EXECUTADO:\n%s", best_sched.action);
-                display_show_text(disp_msg);
-            } else {
-                ESP_LOGE(TAG, "Comando IR do agendamento não encontrado na NVS (Chave: %s)", nvs_key);
-                display_show_text("AGEND: IR NAO\nENCONTRADO");
-            }
-        } else {
-            ESP_LOGE(TAG, "Ação do agendamento inválida: %s", best_sched.action);
-        }
+        execute_schedule_action(&best_sched); // Dispara o IR via hardware
     } else {
-        ESP_LOGI(TAG, "Nenhum agendamento pendente para o horário atual.");
+        ESP_LOGI(TAG, "Nenhum agendamento pendente para o dia/horário atual.");
+    }
+
+    return true;
+}
+
+static void schedule_checker_task(void *pvParameters) {
+    struct tm timeinfo;
+    int last_processed_minute = -1;
+
+    ESP_LOGI(TAG, "Task de monitoramento de agendamentos (1 min) iniciada.");
+
+    while (1) {
+        if (rtc_manager_get_time(&timeinfo)) {
+            // Executa apenas quando houver a virada do minuto
+            if (timeinfo.tm_min != last_processed_minute) {
+                last_processed_minute = timeinfo.tm_min;
+
+                ESP_LOGI(TAG, "Mudança de minuto (%02d:%02d). Verificando agendamentos...",
+                         timeinfo.tm_hour, timeinfo.tm_min);
+
+                // Reavalia a NVS para o minuto atual
+                check_and_run_schedules();
+            }
+        }
+
+        // Checa a transição do tempo a cada 1 segundo
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -319,7 +145,7 @@ static void enqueue_learned_ir_json(int cmd_index, const char *action_name, cons
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) return;
 
-    cJSON_AddNumberToObject(root, "comando", cmd_index);
+    cJSON_AddNumberToObject(root, "cmd_id", cmd_index);
     cJSON_AddStringToObject(root, "action", action_name);
     cJSON_AddNumberToObject(root, "length", cmd->length);
 
@@ -402,10 +228,7 @@ static void run_ir_learning_routine(void) {
         // 3. Botão 2 (GPIO34): Gravar na NVS e passar para o próximo
         if (gpio_get_level(BUTTON_2_GPIO) != 0) {
             if (has_cmd) {
-                char nvs_key[15];
-                snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", current_idx);
-
-                if (save_ir_to_nvs(nvs_key, &captured_cmd)) {
+                if (explorer_memory_save_ir(current_idx, &captured_cmd)) {
                     ESP_LOGI(TAG, "Comando [%s] gravado na NVS!", IR_ACTIONS[current_idx]);
                     
                     // Enfileira mensagem JSON na fila MQTT TX
@@ -498,12 +321,9 @@ static void mqtt_consumer_task(void *pvParameters) {
                                 }
 
                                 if (cmd_index >= 0) {
-                                    char nvs_key[15];
-                                    snprintf(nvs_key, sizeof(nvs_key), "cmd_%d", cmd_index);
-
                                     ir_raw_command_t ir_cmd;
-                                    if (load_ir_from_nvs(nvs_key, &ir_cmd)) {
-                                        ESP_LOGI(TAG, "Enviando sinal IR para [%s] (Chave NVS: %s)...", action_str, nvs_key);
+                                    if (explorer_memory_load_ir(cmd_index, &ir_cmd)) {
+                                        ESP_LOGI(TAG, "Disparando comando IR [%s] (Índice: %d) via hardware...", action_str, cmd_index);
                                         
                                         // Dispara o sinal infravermelho via hardware
                                         ir_send_command(&ir_cmd);
@@ -522,7 +342,7 @@ static void mqtt_consumer_task(void *pvParameters) {
                                         }
 
                                     } else {
-                                        ESP_LOGE(TAG, "Comando IR '%s' não encontrado na NVS (Chave: %s)", action_str, nvs_key);
+                                        ESP_LOGE(TAG, "Comando IR '%s' não encontrado na NVS (Índice: %d)", action_str, cmd_index);
                                         display_show_text("IR NAO GRAVADO");
                                     }
                                 } else {
@@ -567,7 +387,7 @@ static void mqtt_consumer_task(void *pvParameters) {
 
                                 display_show_text("SALVANDO WIFI...");
 
-                                if (save_wifi_credentials_to_nvs(ssid_item->valuestring, pass_item->valuestring)) {
+                                if (explorer_memory_save_wifi_credentials(ssid_item->valuestring, pass_item->valuestring)) {
                                     display_show_text("WIFI ATUALIZADO");
                                     // 1. Prepara e envia a mensagem ACK para a fila TX
                                     mqtt_message_t ack_msg;
@@ -612,7 +432,7 @@ static void mqtt_consumer_task(void *pvParameters) {
                                     snprintf(sched.time, sizeof(sched.time), "%s", time_item->valuestring);
                                     snprintf(sched.action, sizeof(sched.action), "%s", action_item->valuestring);
 
-                                    if (save_schedule_to_nvs(&sched)) {
+                                    if (explorer_memory_save_schedule(&sched)) {
                                         char disp_msg[64];
                                         snprintf(disp_msg, sizeof(disp_msg), "AGEND %d SALVO\n%s %s", sched_id, sched.time, sched.action);
                                         display_show_text(disp_msg);
@@ -665,7 +485,8 @@ static void mqtt_consumer_task(void *pvParameters) {
                 display_clear();
                 
                 // Finaliza e remove a própria task da memória do FreeRTOS
-                // TODO: Botar esp32 para dormir aqui!
+                mqtt_stop();
+                rtc_manager_process_schedules_and_sleep();
                 vTaskDelete(NULL);
             }
         }
@@ -719,20 +540,18 @@ static void on_wifi_status_change(const char *title, const char *subtitle) {
 
 void app_main(void)
 {
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NEW_VERSION_FOUND || ret == ESP_ERR_NVS_NO_FREE_PAGES) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    if (!explorer_memory_init()) {
+        ESP_LOGE(TAG, "Falha ao inicializar a memória!");
+        display_init();
+        display_power(true);
+        display_show_text("MEM ERROR");
+        return;
     }
-    ESP_ERROR_CHECK(ret);
 
     display_init();
     display_power(true);
     buttons_init();
     ir_hardware_init();
-
-    // TODO: A leitura dos agendamentos deve ficar aqui
-    // check_and_run_schedules();
 
     g_mqtt_tx_queue = xQueueCreate(TOTAL_ACTIONS + 2, sizeof(mqtt_message_t));
     if (g_mqtt_tx_queue == NULL) {
@@ -744,6 +563,10 @@ void app_main(void)
         run_ir_learning_routine();
     }
 
+    rtc_manager_init();
+    bool isHourSync = check_and_run_schedules();
+    xTaskCreate(schedule_checker_task, "schedule_checker_task", 3072, NULL, 4, NULL);
+
     // Em app_main() dentro de main.c
     if (!wifi_is_connected()) {
         // Tenta 3x na rede do cliente e 3x na rede conectaSenFio
@@ -753,6 +576,11 @@ void app_main(void)
     if (wifi_is_connected()) {
         ESP_LOGI(TAG, "Wi-Fi OK, RSSI: %d dBm", wifi_get_rssi());
         display_show_text("WIFI OK\nCONECTANDO MQTT");
+
+        if(isHourSync == false && rtc_manager_sync_ntp() == true)
+        {
+            check_and_run_schedules();
+        }
 
         // 2. Tenta conectar no MQTT 3 Vezes
         if (mqtt_init_with_retry(3)) {
@@ -772,17 +600,16 @@ void app_main(void)
             // 4. Envia telemetria inicial via MQTT
             send_telemetry();
 
-            //TODO: A leitura dos agendamentos deve sair aqui
-            check_and_run_schedules();
-
         } else {
             // Se falhar a conexão MQTT após 3 tentativas
             ESP_LOGE(TAG, "Erro na conexão MQTT!");
             display_show_text("ERRO");
+            rtc_manager_process_schedules_and_sleep();
         }
     } else {
         ESP_LOGE(TAG, "Exibindo ERRO WIFI no display...");
         display_show_text("ERRO WIFI");
+        rtc_manager_process_schedules_and_sleep();
     }
 
     while (1) {

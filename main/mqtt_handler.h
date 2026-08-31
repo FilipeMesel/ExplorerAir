@@ -30,4 +30,10 @@ bool mqtt_publish_status(const char *json_payload, bool retain);
  */
 bool mqtt_publish_commands_json(const char *json_payload, char *out_mac_str);
 
+/**
+ * @brief Interrompe a conexão MQTT.
+ *
+ */
+void mqtt_stop(void);
+
 #endif // MQTT_HANDLER_H

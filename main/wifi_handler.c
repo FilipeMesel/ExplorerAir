@@ -9,8 +9,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
-#include "nvs.h"
+#include "explorer_memory.h"
 
 static const char *TAG = "WIFI_HANDLER";
 
@@ -51,37 +50,11 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 
 // Carrega as credenciais da NVS
 static bool wifi_load_credentials(char *ssid, char *pass) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_WIFI_NAMESPACE, NVS_READONLY, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    size_t ssid_len = 32;
-    size_t pass_len = 64;
-
-    err = nvs_get_str(nvs_h, NVS_KEY_SSID, ssid, &ssid_len);
-    if (err == ESP_OK) {
-        err = nvs_get_str(nvs_h, NVS_KEY_PASS, pass, &pass_len);
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
+    return explorer_memory_load_wifi_credentials(ssid, 32, pass, 64);
 }
 
 bool wifi_save_credentials(const char *ssid, const char *password) {
-    nvs_handle_t nvs_h;
-    esp_err_t err = nvs_open(NVS_WIFI_NAMESPACE, NVS_READWRITE, &nvs_h);
-    if (err != ESP_OK) return false;
-
-    err = nvs_set_str(nvs_h, NVS_KEY_SSID, ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs_h, NVS_KEY_PASS, password);
-    }
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_h);
-    }
-
-    nvs_close(nvs_h);
-    return (err == ESP_OK);
+    return explorer_memory_save_wifi_credentials(ssid, password);
 }
 
 static bool try_connect_network(const char *ssid, const char *pass, const char *net_label) {
