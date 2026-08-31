@@ -144,11 +144,7 @@ The explorer_rtc module coordinates schedule execution and manages the ESP32 sle
 3. Deep Sleep Calculation
 To prevent missing back-to-back schedules in consecutive minutes:
 
-* Upcoming Alarm Today: The sleep timer wakes the chip at second 00 of the target minute:
-
-$$\text{sleep\_seconds} = (\text{min\_future\_minutes} - \text{current\_minutes}) \times 60 - \text{now\_tm.tm\_sec}$$
-
-A safety threshold enforces a minimum sleep time of 5 seconds.
+* **Upcoming Alarm Today:** The sleep duration is dynamically calculated to wake the chip precisely at second `00` of the target schedule minute. This is achieved by converting the time difference between the next alarm and the current time into total seconds, minus the current second offset (`now_tm.tm_sec`). A safety threshold enforces a minimum sleep interval of 5 seconds.
 
 * No Upcoming Alarms Remaining Today:
 
@@ -319,11 +315,8 @@ When booted normally without holding both buttons:
 ### 4. Dynamic Deep Sleep Management
 After completing network exchanges and executing pending tasks, the device prepares for power saving:
 
-1. Calculating Next Event:Target Event Today:
-
-* Computes the exact delay to wake the processor at second 00 of the next target schedule minute:
-$$\text{sleep\_seconds} = (\text{min\_future\_minutes} - \text{current\_minutes}) \times 60 - \text{now\_tm.tm\_sec}$$
-* No Further Events Today: If less than 2 hours remain until midnight, it sleeps until 00:01 of the next day. Otherwise, it enters a 3-hour periodic sleep cycle.
+1. Calculating Next Event:
+* **Target Event Today:** Dynamically calculates the delay required to wake the processor precisely at second `00` of the target schedule minute. The system converts the minute delta into seconds and subtracts the current seconds offset (`now_tm.tm_sec`).
 
 2. Power Down: The OLED display is explicitly powered down (display_power(false)), and the chip enters esp_deep_sleep(). Upon waking up, the cycle repeats from Step 1.
 
