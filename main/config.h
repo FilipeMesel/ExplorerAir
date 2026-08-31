@@ -40,7 +40,7 @@
 #define MAX_BUFFER_SYMBOLS   400
 
 // --- CONFIGURAÇÕES DE TEMPO ---
-#define MQTT_INTERACTIVITY_TIMEOUT       120 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
+#define MQTT_INTERACTIVITY_TIMEOUT       30 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
 #define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS  100 // Timeout para envio de mensagens na fila MQTT TX
 
 // --- CONFIGURAÇÕES DE SCHEDULE ---

@@ -32,15 +32,43 @@ All GPIO allocations are centralized in `main/config.h` for straightforward main
 ## 📦 Project Architecture
 
 ```text
-├── CMakeLists.txt              # Root CMake configuration
+├── CMakeLists.txt                  # Root CMake configuration
 └── main/
-    ├── CMakeLists.txt          # Component CMake configuration
-    ├── idf_component.yml       # ESP Component Manager dependencies
-    ├── config.h                # Central pinout definition
-    ├── display.h / display.c   # SSD1306 I2C display driver
+    ├── CMakeLists.txt              # Component CMake configuration
+    ├── idf_component.yml           # ESP Component Manager dependencies
+    ├── config.h                    # Central pinout definition
+    ├── explorer_structs.h          # Data structures (schedule_t, ir_raw_command_t)
+    ├── display.h / display.c       # SSD1306 OLED display driver (I2C)
     ├── ir_handler.h / ir_handler.c # RMT RX/TX IR signal handlers
-    ├── mqtt_handler.h / mqtt_handler.c # Wi-Fi and MQTT client logic
-    └── explorer_irblaster.c    # Main application & FSM task
+    ├── mqtt_handler.h / mqtt_handler.c # Wi-Fi, MQTT client, and JSON parser logic
+    ├── explorer_memory.h / .c      # NVS storage abstraction (IR and Schedules)
+    ├── explorer_rtc.h / .c         # Time management (NTP, RTC, Scheduler, Deep Sleep)
+    └── explorer_irblaster.c        # Main application entry point (app_main) & FSM
+```
+
+### Component Registration
+
+```text
+idf_component_register(
+    SRCS 
+        "explorer_irblaster.c"
+        "display.c"
+        "ir_handler.c"
+        "mqtt_handler.c"
+        "explorer_memory.c"
+        "explorer_rtc.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        esp_driver_gpio
+        esp_driver_rmt
+        esp_driver_i2c
+        nvs_flash
+        esp_wifi
+        esp_event
+        espressif__mqtt
+        espressif__cjson
+)
 ```
 
 ---
@@ -67,123 +95,147 @@ The same happens for Json:
 idf.py add-dependency "espressif/cjson"
 ```
 
-Component Registration (main/CMakeLists.txt)
-Ensure your CMake configuration references the modular driver components (esp_driver_gpio, esp_driver_rmt, esp_driver_i2c) and the registry MQTT package (espressif__mqtt):
+## ⏰ Scheduler Logic & Deep Sleep Management
+The explorer_rtc module coordinates schedule execution and manages the ESP32 sleep duration.
 
 ```text
-idf_component_register(
-    SRCS 
-        "explorer_irblaster.c"
-        "display.c"
-        "ir_handler.c"
-        "mqtt_handler.c"
-    INCLUDE_DIRS 
-        "."
-    REQUIRES 
-        esp_driver_gpio
-        esp_driver_rmt
-        esp_driver_i2c
-        nvs_flash
-        esp_wifi
-        esp_event
-        espressif__mqtt
-)
+                        [ Power On / Reset ]
+                                 │
+                 ┌───────────────┴───────────────┐
+                 ▼                               ▼
+       [ Buttons 1 & 2 Pressed? ]     [ Normal Boot Sequence ]
+                 │                               │
+       (YES)     │                               ▼
+  ┌──────────────┘                     [ Connect Wi-Fi & Sync NTP ]
+  ▼                                              │
+[ Enter Guided Learning Mode ]          ┌────────┴────────┐
+  │                                     ▼                 ▼
+  ├─► Wait IR Pulse per Step       (Success)          (Failure)
+  ├─► Button 1: Test Command            │                 │
+  ├─► Button 2: Save to NVS             └────────┬────────┘
+  │                                              ▼
+  └─► Complete 25°C Step                [ Read Schedules from NVS ]
+         │                                       │
+         ▼                         ┌─────────────┴─────────────┐
+  [ Reconnect Wi-Fi & MQTT ]       ▼                           ▼
+         │               [ Missed Schedules Today? ]   [ Next Future Schedule ]
+         ▼                  └─► Execute latest missed     └─► Calculate sleep
+  [ Bulk Upload CMD 6 Queue ]                                 down to 00s
+         │                                 │                   │
+         └─────────────────────────────────┴─────────┬─────────┘
+                                                     ▼
+                                          [ Configure Deep Sleep ]
+                                                     │
+                                                     ▼
+                                            [ Enter Deep Sleep ]
 ```
 
+1. Dual-Path Operational Logic
+
+* Guided IR Learning Path (Manual Trigger): If Button 1 (GPIO 5) and Button 2 (GPIO 34) are pressed simultaneously during boot, the network stack is held back to isolate hardware resources. The system sequentially captures, tests, and saves raw IR pulse timing arrays to NVS across all states (OFF $\rightarrow$ ON $\rightarrow$ 18°C ... 25°C). Once completed, it connects to Wi-Fi/MQTT and bulk-transmits all saved sequences via CMD 6.
+* Automated Scheduler Path (Normal Boot): The device syncs time via NTP (falling back to local RTC if offline), queries NVS for scheduled tasks, processes pending actions, and sets a Deep Sleep timer.
+
+2. Selection & Execution of Pending Schedules
+
+* The system converts current time into minutes passed today (current_minutes = hr * 60 + min).
+* It iterates through stored NVS schedules filtered by the active day of the week (week_days).
+* If schedules expired earlier today (sched_minutes <= current_minutes), the system identifies the most recent missed schedule and executes it via execute_schedule_action().
+
+3. Deep Sleep Calculation
+To prevent missing back-to-back schedules in consecutive minutes:
+
+* Upcoming Alarm Today: The sleep timer wakes the chip at second 00 of the target minute:
+
+$$\text{sleep\_seconds} = (min\_future\_minutes - current\_minutes) \times 60 - now\_tm.tm\_sec$$
+
+A safety threshold enforces a minimum sleep time of 5 seconds.
+
+* No Upcoming Alarms Remaining Today:
+
+If $\le 2\text{ hours}$ remain until midnight, the device sleeps until 00:01 of the following day.
+If $> 2\text{ hours}$ remain, the device enters a periodic sleep cycle waking up every 3 hours to re-evaluate schedule queues.
+
 ---
 
-## Communication Protocol & MQTT Commands
+## 📡 Communication Protocol & MQTT Commands
 
-The project uses an asynchronous communication protocol over MQTT for telemetry transmission, IR control command reception, and local learning synchronization.
+Operational Flow
 
-### Operational Flow
+1. Initial Telemetry (CMD 0): Upon boot/connection, the device transmits sensor values, local RTC time, and last executed action state.
+2. Server Handshake (CMD 1): Server acknowledges receipt of initial telemetry.
+3. Remote Commands: The server can trigger immediate IR emissions (CMD 2), order manual standby mode (CMD 4), or manage schedules (CMD 7 / CMD 8).
+4. Guided Learning Mode: Triggered via physical buttons, pauses network connections to acquire IR sequences:
+DESLIGAR $\rightarrow$ LIGAR $\rightarrow$ 18°C $\rightarrow$ ... $\rightarrow$ 25°C.
 
-1. **Telemetry & Listening Cycle:** Upon connecting to the network, the device sends an initial telemetry payload (`CMD 0`) containing sensor data and the last executed action status. After receiving confirmation from the server (`CMD 1`), the ESP32 enters an active listening state to dynamically process IR emission requests (`CMD 2`), sleep/standby instructions (`CMD 4`), or future commands.
-2. **Guided Learning Mode:** Triggered via physical button (**GPIO 05**), the network stack is paused to isolate IR signal acquisition. The process follows a fixed sequence:
-   - `OFF` $\rightarrow$ `ON` $\rightarrow$ `18°C` $\rightarrow$ ... $\rightarrow$ `25°C`
-   - The **GPIO 34** button allows testing the emission of the captured IR code at any step.
-   - Upon completing the `25°C` step and advancing with **GPIO 05**, the device exits learning mode, reconnects to Wi-Fi/MQTT, sends `CMD 0`, and sequentially transmits all learned IR codes via **`CMD 6`**.
-
----
+Once complete, captured IR data arrays are uploaded via CMD 6.
 
 ### JSON Command Specifications
-
 #### 📤 Commands Sent by Device (TX)
 
-* **Command 0 — Initial Telemetry / Reboot**
-  Sent upon connecting to the MQTT broker to report current sensor readings and the last action performed.
-```json
-{
-"comando": 0,
-"temp": 24,
-"umid": 60,
-"rtc": "10:00",
-"last_action": "LEARNED_FULL_SET"
-}
-```
-
-* **Command 3 — IR Emission Acknowledgment (ACK)**
-Sent to the server following the successful execution of an IR emission request (CMD 2).
+* CMD 0 — [**IMPLEMENTED**] Initial Telemetry / Boot: Reports telemetry, RTC status, and last executed action.
 
 ```json
-  {
-  "comando": 3,
-  "status": "OK"
-  }
+{"cmd_id":0,"temp":24,"umid":60,"rtc":"10:00","RSSI":-32}
 ```
 
-* **Command 5 — Sleep Request Acknowledgment (ACK)**
-Sent to the server confirming the scheduled standby duration (CMD 4).
+* CMD 3 — [**IMPLEMENTED**] IR Emission ACK: Confirms completion of requested IR signal transmission (CMD 2).
+
+```json
+{"cmd_id":3,"status":"OK","action":"SET_TEMP_25"}
+```
+
+* CMD 5 — [**NOT IMPLEMENTED**] Sleep Request ACK: Confirms scheduled standby duration received from server (CMD 4).
+
+* CMD 6 — [**IMPLEMENTED**] Learned IR Transmission: Sequential upload of raw_data arrays captured during learning mode.
 
 ```json
 {
-  "comando": 5,
-  "status": "OK"
+  "cmd_id":9,
+  "action":"25 C",
+  "length":128,
+  "raw_data":[4402,4377,537,1608,536,536,536,1607,536,1608,535,536,537,535,535,1609,535,537,535,536,535,1608,536,536,535,537,534,1609,536,1607,535,537,536,1608,535,1609,535,536,536,1608,535,1608,535,1607,536,1609,536,1608,535,1608,536,536,535,1608,535,538,533,537,535,537,535,536,535,537,535,536,535,1608,535,1609,535,536,534,538,533,538,535,537,535,536,535,536,535,537,535,536,535,1608,535,1608,535,1608,536,1608,535,1608,536,1608,535,5190,4375,4379,534,1609,535,536,535,1609,535,1609,534,538,534,537,534,1610,534,537,535,537,532,1610,535,537,535,536,535,1608
+  ]
 }
 ```
 
-* **Command 6 — Learned Command Queue Transmission**
-Fired sequentially after completing the Guided Learning Mode to register the raw IR pulse data for each captured button on the server.
+* CMD 8 — [**IMPLEMENTED**] Wi-Fi credentials saved: Confirms that the new Wi-Fi SSID and Password was saved.
 
 ```json
-{
-  "comando": 6,
-  "action": "25 C",
-  "length": 68,
-  "raw_data": [9000, 4500, 560, 560, 560, 1690]
-}
+{"cmd_id":8,"status":"OK"}
+```
+
+* CMD 10 — [**IMPLEMENTED**] New schedule received: Confirms that the new schedule was saved.
+
+```json
+{"cmd_id":10,"status":"OK","schedule_id":1}
 ```
 
 #### 📥 Commands Received from Server (RX)
 
-* **Command 1 — Telemetry Acknowledgment / Handshake**
-Sent by the server in response to CMD 0 to confirm telemetry data has been received and processed.
+* CMD 1 — [**IMPLEMENTED**] Telemetry ACK / Handshake: Server acknowledgement for CMD 0.
 
 ```json
-{
-  "comando": 1,
-  "status": "OK"
-}
+{ "cmd_id": 1, "status": "OK"}
 ```
 
-* **Command 2 — IR Emission Order**
-Instructs the ESP32 to transmit the infrared signal corresponding to the provided action label.
+* CMD 2 — [**IMPLEMENTED**] IR Emission Request: Triggers transmission of specified IR action (e.g., "SET_TEMP_25").
 
 ```json
-{
-  "comando": 2,
-  "action": "SET_TEMP_25"
-}
+{"cmd_id": 2,"action": "SET_TEMP_25"}
 ```
 
-* **Command 4 — Sleep / Standby Request**
-Specifies a standby duration (in seconds) for the device before reopening the connection cycle with a new CMD 0.
+* CMD 4 — [**NOT IMPLEMENTED**] Standby Request: Mandates standby duration in seconds before reconnecting.
+
+* CMD 7 — [**IMPLEMENTED**] Wi-Fi Credentials: Receive a new WiFi SSID and Password.
 
 ```json
-{
-  "comando": 4,
-  "sleep": 10
-}
+{"cmd_id": 7, "ssid": "VIVOFIBRA-56ED_EXT", "password": "72233756ED"}
+```
+
+* CMD 9 — [**IMPLEMENTED**] New schedule: Receive a new new schedule.
+
+```json
+{"cmd_id": 9, "schedule_id": 1, "week_days": 5, "time": "10:05", "action": "SET_TEMP_18"}
 ```
 
 ---
@@ -195,12 +247,14 @@ Set up the target board:
 idf.py set-target esp32
 ```
 
-Configure Wi-Fi Credentials:
-Update your network details inside main/config.h:
+Add the dependencies:
 
 ```bash
-#define WIFI_SSID "YOUR_WIFI_SSID"
-#define WIFI_PASS "YOUR_WIFI_PASSWORD"
+idf.py add-dependency "espressif/mqtt"
+```
+
+```bash
+idf.py add-dependency "espressif/cjson"
 ```
 
 Build the project:
@@ -211,21 +265,69 @@ idf.py -p COMX build flash monitor
 ---
 
 ## 🕹 Usage Flow
-Power-On: Display stays turned off by default.
 
-Start Learning: Press Button 1 and Button 2 simultaneously. The display powers on and prompts LEARNING....
+Here is the complete Usage Flow section written in English Markdown (.md), covering the end-to-end mechanism of the system across its operational states:
 
-Capture Sequence:
+### 1. Boot-Up & Dual-Path Selection
 
-Step labels prompt on display (DESLIGAR, LIGAR, 18*C ... 25*C).
+Upon power-on or wake-up from Deep Sleep, the device checks the state of the physical push buttons:
 
-Aim remote control at the receiver. Display updates to IR OK when captured.
+```text
+                  ┌───────────────────────────────┐
+                  │      System Power-On / Boot    │
+                  └───────────────┬───────────────┘
+                                  │
+                   Is Button 1 (GPIO 5) AND
+                 Button 2 (GPIO 34) pressed?
+                                  │
+                  ├─── (YES) ───► [ Guided Learning Mode ]
+                  │
+                  └─── (NO)  ───► [ Automated Scheduler Path ]
+```
 
-Press Button 1 (GPIO 5) to test/re-transmit the command via the IR LED (TESTE OK).
+### 2. Guided IR Learning Mode (Manual Trigger)
 
-Press Button 2 (GPIO 34) to confirm saving (OK) and advance to the next step.
+If both Button 1 and Button 2 are held during startup, the Wi-Fi stack is kept disabled to ensure non-blocking IR capture, and the system powers on the SSD1306 OLED display:
 
-Publish Data: Upon completing 25*C, the system connects to Wi-Fi, formats all timing sequences into JSON, uploads to explorer/command/{MAC}, displays Enviado OK, and powers off the display.
+1. Step-by-Step Acquisition Sequence: The FSM cycles sequentially through required AC remote commands:
+
+$$\text{DESLIGAR} \longrightarrow \text{LIGAR} \longrightarrow \text{18°C} \longrightarrow \text{19°C} \longrightarrow \dots \longrightarrow \text{25°C}$$
+
+2. IR Capture: Aim the original AC remote control at the TSOP receiver (GPIO 15). The OLED display confirms successful pulse acquisition (IR OK).
+
+3. Command Testing: Press Button 1 (GPIO 5) to emit the captured raw pulse stream via the IR LED driver (GPIO 4) to verify responsiveness with the AC unit (TESTE OK).
+
+4. Saving & Step Advance: Press Button 2 (GPIO 34) to write the timing array to NVS and proceed to the next state (OK).
+
+5. Bulk Upload & Exit: Once the final state (25°C) is saved, the device connects to Wi-Fi/MQTT, bulk-uploads all raw IR timing arrays using CMD 6, displays Enviado OK, powers off the OLED display, and proceeds to the Deep Sleep evaluation sequence.
+
+### 3. Automated Scheduler Path (Normal Boot)
+When booted normally without holding both buttons:
+
+1. Time Sync & Fallback: The ESP32 connects to Wi-Fi and queries NTP servers (pool.ntp.org, a.st1.ntp.br, time.google.com) to synchronize its local clock (timezone set to BRT3). If Wi-Fi fails, it falls back to local RTC time.
+
+3. Telemetry Handshake: Upon establishing an MQTT connection, the device transmits an initial telemetry report (CMD 0) containing sensor readings and current RTC time, expecting a server handshake (CMD 1).
+
+3. Pending Schedule Evaluation:
+
+* Reads stored schedules from NVS (schedule_t structs).
+* Filters events for the current day of the week.
+* If any schedule expired earlier in the day (sched_minutes <= current_minutes), the system selects the most recent missed task and immediately fires the corresponding IR action via execute_schedule_action().
+
+4. Server Command Execution: The device processes inbound real-time MQTT orders such as immediate IR firing (CMD 2), Wi-Fi credential updates (CMD 7), or schedule configuration (CMD 9).
+
+### 4. Dynamic Deep Sleep Management
+After completing network exchanges and executing pending tasks, the device prepares for power saving:
+
+1. Calculating Next Event:Target Event Today:
+
+* Computes the exact delay to wake the processor at second 00 of the next target schedule minute:
+$$\text{sleep\_seconds} = (\text{min\_future\_minutes} - \text{current\_minutes}) \times 60 - \text{now\_tm.tm\_sec}$$
+* No Further Events Today: If less than 2 hours remain until midnight, it sleeps until 00:01 of the next day. Otherwise, it enters a 3-hour periodic sleep cycle.
+
+2. Power Down: The OLED display is explicitly powered down (display_power(false)), and the chip enters esp_deep_sleep(). Upon waking up, the cycle repeats from Step 1.
+
+---
 
 ## 📋 Project Roadmap
 
@@ -233,15 +335,24 @@ Publish Data: Upon completing 25*C, the system connects to Wi-Fi, formats all ti
 | :--- | :--- | :--- |
 | **IR Capture & Transmission** | Raw IR signal transmission via RMT (38 kHz) | Completed |
 | **IR Capture & Transmission** | Raw IR pulse capture via RMT RX | Completed |
+| **IR Capture & Transmission** | Receive raw IR waveform via MQTT and save directly to NVS Flash | Pending |
 | **Interface & Peripherals** | SSD1306 OLED display driver via I2C with FreeRTOS Mutex | Completed |
 | **Interface & Peripherals** | Physical button handling and debounce (GPIO 5 & GPIO 34) | Completed |
-| **Communication & Protocol** | Wi-Fi connection management (NVS & Fallback) and MQTT client | Completed |
-| **Communication & Protocol** | cJSON parser and serializer for Telemetry, ACKs, and Sync (CMD 0 to 8) | Completed |
-| **Business Logic** | Finite State Machine (FSM) for Guided Learning Mode | Completed |
-| **Power Management** | Deep/Light Sleep cycle implementation based on received command interval | Pending |
-| **Power Management** | Timer-based wakeup routine to periodically check schedule queue | Pending |
-| **External Memory (FRAM)** | I2C/SPI driver integration for external FRAM storage | Pending |
-| **Scheduler & RTC** | Schedule management engine for timed AC unit activation | Pending |
-| **Scheduler & RTC** | Missed schedule detection algorithm to handle missed runtime windows | Pending |
+| **Communication & Protocol** | Wi-Fi management with 6 connection retries (3 per AP) and display error fallback | Completed |
+| **Communication & Protocol** | MQTT client integration and inter-task communication via Queue to main FSM | Completed |
+| **Communication & Protocol** | Sequential learned IR payload bulk upload via MQTT with 3 retry attempts | Completed |
+| **Communication & Protocol** | Initial telemetry transmission and server handshake protocol (CMD 0 to 10) | Completed |
+| **Communication & Protocol** | Remote Wi-Fi credentials update via MQTT and persistent saving in NVS | Completed |
+| **Communication & Protocol** | Real-time IR emission command processing via MQTT | Completed |
+| **Business Logic** | Finite State Machine (FSM) for Guided IR Learning Mode | Completed |
+| **Scheduler & RTC** | MQTT Schedule reception, parsing, and non-volatile storage | Completed |
+| **Scheduler & RTC** | Missed schedule execution logic on boot/wakeup using NTP time | Completed |
+| **Scheduler & RTC** | External HW RTC driver integration and sync in `explorer_rtc` | Pending |
+| **Power Management** | Deep Sleep wake-up logic with schedule-aware timer routines | Completed |
+| **Power Management / Telemetry** | Battery circuit reading module for voltage monitoring (ADC & sub-tasks) | Pending |
+| **Sensors & Environment** | PT100 circuit acquisition module for precise temperature/humidity telemetry | Pending |
+| **External Memory (FRAM)** | Hardware integration and refactoring of `explorer_memory` driver to use FRAM | Pending |
 | **Offline Logging (FRAM)** | Local log retention in FRAM during Wi-Fi connection loss | Pending |
 | **Offline Logging (FRAM)** | Log synchronization and flush logic upon Wi-Fi re-establishment | Pending |
+
+**Note:** Everything needs to be validated

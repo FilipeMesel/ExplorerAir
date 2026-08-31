@@ -6,6 +6,7 @@ idf_component_register(
         "wifi_handler.c"
         "mqtt_handler.c"
         "explorer_memory.c"
+        "explorer_rtc.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -25,4 +26,12 @@ if(ENABLE_FRAM_STORAGE)
 else()
     target_compile_definitions(${COMPONENT_LIB} PRIVATE _INCLUDE_NVS_)
     message(STATUS "[main] Persistência: NVS (_INCLUDE_NVS_)")
+endif()
+
+if(ENABLE_EXTERNAL_RTC)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE _INCLUDE_EXTERNAL_RTC_)
+    message(STATUS "[main] RTC: Externo (_INCLUDE_EXTERNAL_RTC_)")
+else()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE _INCLUDE_INTERNAL_RTC_)
+    message(STATUS "[main] RTC: Interno (_INCLUDE_INTERNAL_RTC_)")
 endif()
