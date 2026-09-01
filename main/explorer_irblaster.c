@@ -156,17 +156,16 @@ static void schedule_checker_task(void *pvParameters) {
 /**
  * @brief Convert a learned IR command into a JSON string and enqueue it for MQTT transmission.
  * 
- * @param cmd_index Ir command index (0 to TOTAL_ACTIONS - 1)
  * @param action_name Name of the action associated with the command
  * @param cmd Pointer to the captured IR command
  */
-static void enqueue_learned_ir_json(int cmd_index, const char *action_name, const ir_raw_command_t *cmd) {
+static void enqueue_learned_ir_json(const char *action_name, const ir_raw_command_t *cmd) {
     if (g_mqtt_tx_queue == NULL) return;
 
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) return;
 
-    cJSON_AddNumberToObject(root, "cmd_id", cmd_index);
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_SYNC_LEARNED);
     cJSON_AddStringToObject(root, "action", action_name);
     cJSON_AddNumberToObject(root, "length", cmd->length);
 
@@ -256,7 +255,7 @@ static void run_ir_learning_routine(void) {
                     ESP_LOGI(TAG, "Comando [%s] gravado na NVS!", IR_ACTIONS[current_idx]);
                     
                     // Enqueue the learned IR command in JSON format for MQTT transmission
-                    enqueue_learned_ir_json(current_idx, IR_ACTIONS[current_idx], &captured_cmd);
+                    enqueue_learned_ir_json(IR_ACTIONS[current_idx], &captured_cmd);
 
                     snprintf(display_buf, sizeof(display_buf), "%s\nCOMANDO OK!", IR_ACTIONS[current_idx]);
                 } else {
@@ -492,6 +491,65 @@ static void mqtt_consumer_task(void *pvParameters) {
                     case CMD_SET_SCHEDULE_ACK:
                         ESP_LOGI(TAG, "Tratando CMD_SET_SCHEDULE_ACK");
                         break;
+
+                    case CMD_SET_IR_RAW:
+                    {
+                        ESP_LOGI(TAG, "Tratando CMD_SET_IR_RAW");
+                        display_show_text("CMD: SET IR RAW");
+
+                        cJSON *action_item = cJSON_GetObjectItem(json, "action");
+                        cJSON *length_item = cJSON_GetObjectItem(json, "length");
+                        cJSON *raw_data_array = cJSON_GetObjectItem(json, "raw_data");
+
+                        if (cJSON_IsString(action_item) && cJSON_IsNumber(length_item) && cJSON_IsArray(raw_data_array)) {
+                            const char *action_str = action_item->valuestring;
+                            int cmd_index = explorer_memory_get_index_by_action(action_str);
+
+                            if (cmd_index >= 0) {
+                                ir_raw_command_t new_cmd;
+                                memset(&new_cmd, 0, sizeof(ir_raw_command_t));
+
+                                int num_samples = cJSON_GetArraySize(raw_data_array);
+                                // Define the length of the new command based on the number of samples received, ensuring it does not exceed MAX_BUFFER_SYMBOLS
+                                new_cmd.length = (num_samples < MAX_BUFFER_SYMBOLS) ? num_samples : MAX_BUFFER_SYMBOLS;
+
+                                for (int i = 0; i < new_cmd.length; i++) {
+                                    cJSON *element = cJSON_GetArrayItem(raw_data_array, i);
+                                    if (cJSON_IsNumber(element)) {
+                                        new_cmd.data[i] = (uint16_t)element->valueint;
+                                    }
+                                }
+
+                                // Save the new IR command in NVS at the corresponding index
+                                if (explorer_memory_save_ir(cmd_index, &new_cmd)) {
+                                    ESP_LOGI(TAG, "IR Raw para '%s' (Index %d) salvo com sucesso!", action_str, cmd_index);
+
+                                    char disp_msg[64];
+                                    snprintf(disp_msg, sizeof(disp_msg), "RAW SALVO:\n%s", action_str);
+                                    display_show_text(disp_msg);
+
+                                    // Prepare the ACK message for CMD_SET_IR_RAW_ACK (cmd_id: 12)
+                                    mqtt_message_t ack_msg;
+                                    snprintf(ack_msg.payload, sizeof(ack_msg.payload),
+                                            "{\"cmd_id\":%d,\"status\":\"OK\"}", CMD_SET_IR_RAW_ACK);
+
+                                    if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
+                                        ESP_LOGE(TAG, "Falha ao enfileirar ACK de SET IR RAW!");
+                                    }
+                                } else {
+                                    ESP_LOGE(TAG, "Erro ao salvar IR Raw na NVS");
+                                    display_show_text("ERRO SALVAR RAW");
+                                }
+                            } else {
+                                ESP_LOGE(TAG, "Ação IR não reconhecida: %s", action_str);
+                                display_show_text("ACAO DESCONHECIDA");
+                            }
+                        } else {
+                            ESP_LOGE(TAG, "Payload JSON de CMD_SET_IR_RAW inválido!");
+                            display_show_text("JSON RAW INVALIDO");
+                        }
+                    }
+                    break;
 
                     default:
                         ESP_LOGW(TAG, "Comando desconhecido recebido: %d", cmd_id);

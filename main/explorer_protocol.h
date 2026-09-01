@@ -17,17 +17,20 @@
  * 
  */
 typedef enum {
-    CMD_TELEMETRY        = 0,   /**< Command for telemetry */
-    CMD_TELEMETRY_ACK    = 1,   /**< Command for telemetry acknowledgment */
-    CMD_EXECUTE_IR       = 2,   /**< Command to execute IR command */
-    CMD_EXECUTE_IR_ACK   = 3,   /**< Command for IR execution acknowledgment */
-    CMD_SET_SLEEP        = 4,   /**< Command to set sleep mode */
-    CMD_SET_SLEEP_ACK    = 5,   /**< Command for sleep mode configuration acknowledgment */
-    CMD_SYNC_LEARNED     = 6,   /**< Command to synchronize learned commands */
-    CMD_SET_WIFI         = 7,   /**< Command to configure WiFi */
-    CMD_SET_WIFI_ACK     = 8,   /**< Command for WiFi configuration acknowledgment */
-    CMD_SET_SCHEDULE      = 9,  /**< Command to configure scheduling */
-    CMD_SET_SCHEDULE_ACK  = 10  /**< Command for scheduling configuration acknowledgment */
+    CMD_TELEMETRY = 0,      /**< Command for telemetry */
+    CMD_TELEMETRY_ACK,      /**< Command for telemetry acknowledgment */
+    CMD_EXECUTE_IR,         /**< Command to execute IR command */
+    CMD_EXECUTE_IR_ACK,     /**< Command for IR execution acknowledgment */
+    CMD_SET_SLEEP,          /**< Command to set sleep mode */
+    CMD_SET_SLEEP_ACK,      /**< Command for sleep mode configuration acknowledgment */
+    CMD_SYNC_LEARNED,       /**< Command to synchronize learned commands */
+    CMD_SET_WIFI,           /**< Command to configure WiFi */
+    CMD_SET_WIFI_ACK,       /**< Command for WiFi configuration acknowledgment */
+    CMD_SET_SCHEDULE,       /**< Command to configure scheduling */
+    CMD_SET_SCHEDULE_ACK,   /**< Command for scheduling configuration acknowledgment */
+    CMD_SET_IR_RAW,         /**< Command to set raw IR data */
+    CMD_SET_IR_RAW_ACK,     /**< Command for raw IR data configuration acknowledgment */
+    CMD_UNKNOWN             /**< Unknown command */
 } command_id_t;
 
 /**
@@ -48,8 +51,11 @@ static const char* get_cmd_display_name(int cmd_id) {
         case CMD_SET_WIFI_ACK:      return "WIFI SET ACK";      /**< Command for WiFi configuration acknowledgment */
         case CMD_SET_SCHEDULE:      return "SET SCHEDULE";      /**< Command to configure scheduling */
         case CMD_SET_SCHEDULE_ACK:  return "SCHEDULE SET ACK";  /**< Command for scheduling configuration acknowledgment */
+        case CMD_SET_IR_RAW:        return "SET IR RAW";        /**< Command to set raw IR data */
+        case CMD_SET_IR_RAW_ACK:    return "IR RAW SET ACK";    /**< Command for raw IR data configuration acknowledgment */
         default:                    return "UNKNOWN CMD";       /**< Unknown command */
     }
+    return "UNKNOWN CMD";                                       /**< Fallback for unknown commands */
 }
 
 #endif // EXPLORER_PROTOCOL_H
