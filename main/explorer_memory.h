@@ -78,4 +78,11 @@ bool explorer_memory_save_schedule(const schedule_t *sched);
  */
 bool explorer_memory_load_schedule(uint8_t schedule_id, schedule_t *sched_out);
 
+/**
+ * @brief Maps an action string to its corresponding NVS command index.
+ * @param action_str The string representation of the action (e.g. "LIGAR", "25 C")
+ * @return Returns index 0..TOTAL_ACTIONS-1 if valid, or -1 if invalid/unknown.
+ */
+int explorer_memory_get_index_by_action(const char *action_str);
+
 #endif // EXPLORER_MEMORY_H

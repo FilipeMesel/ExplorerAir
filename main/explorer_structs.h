@@ -48,4 +48,22 @@ typedef struct {
     char action[32];        /**< Action name, e.g., "SET_TEMP_18" */
 } schedule_t;
 
+/**
+ * @brief Enumeration for IR actions
+ *
+ */
+enum {
+    UNKNOWN_ACTION = -1,
+    LIGAR = 0,
+    DESLIGAR,
+    TEMP_18,
+    TEMP_19,
+    TEMP_20,
+    TEMP_21,
+    TEMP_22,
+    TEMP_23,
+    TEMP_24,
+    TEMP_25
+};
+
 #endif // EXPLORER_STRUCTS_H
