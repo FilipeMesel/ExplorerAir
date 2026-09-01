@@ -1,10 +1,21 @@
+/**
+ * @file display.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the implementation for handling the display in the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "display.h"
 #include "config.h"
 #include <string.h>
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
-// Tabela de fonte ASCII completa (32 a 126) em matriz 8x8
+/** @brief Font data for 8x8 characters (ASCII 32-126) */
 static const uint8_t font8x8[95][8] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // ' ' (32)
     {0x00, 0x00, 0x5f, 0x00, 0x00, 0x00, 0x00, 0x00}, // '!'
@@ -103,8 +114,8 @@ static const uint8_t font8x8[95][8] = {
     {0x02, 0x01, 0x02, 0x04, 0x02, 0x00, 0x00, 0x00}  // '~'
 };
 
-static uint8_t frame_buffer[1024];
-static i2c_master_dev_handle_t oled_dev_handle;
+static uint8_t frame_buffer[1024];              /**< Frame buffer for the OLED display */
+static i2c_master_dev_handle_t oled_dev_handle; /** < I2C device handle for the OLED display */
 
 static void oled_send_cmd(uint8_t cmd) {
     uint8_t tx_buf[2] = {0x00, cmd};
@@ -133,15 +144,18 @@ void display_clear(void) {
 void display_show_text(const char *str) {
     memset(frame_buffer, 0x00, sizeof(frame_buffer));
     
-    // Começa na página 2 (linha de cima) para centralizar verticalmente as 2 linhas
+    // Starting in 2 Pages above the top to leave a margin
     int page = 2;
     int x = 0;
 
-    // Calcula a largura da linha atual para centralizar horizontalmente
+    // Calculate the width of the current line to center it horizontally
     const char *line_start = str;
     int line_len = 0;
     while (line_start[line_len] != '\0' && line_start[line_len] != '\n') {
         line_len++;
+    }
+    if (line_len * 8 < 128) {
+        x = (128 - (line_len * 8)) / 2;
     }
     if (line_len * 8 < 128) {
         x = (128 - (line_len * 8)) / 2;
@@ -153,7 +167,13 @@ void display_show_text(const char *str) {
             page += 2; // Pula 2 páginas (16 pixels) para a linha de baixo
             if (page > 6) break; // Evita estourar o limite inferior do display
 
-            // Recalcula o alinhamento horizontal para a segunda linha
+    while (*str) {
+        // Interpret newline characters to move to the next line
+        if (*str == '\n') {
+            page += 2; // Jump 2 pages (16 pixels) to the next line
+            if (page > 6) break; // Avoid exceeding the lower limit of the display
+
+            // Recalculate the horizontal alignment for the second line
             const char *next_line = str + 1;
             line_len = 0;
             while (next_line[line_len] != '\0' && next_line[line_len] != '\n') {
@@ -165,7 +185,7 @@ void display_show_text(const char *str) {
             continue;
         }
 
-        // Renderiza o caractere se ainda couber na largura do display
+        // Render the character if it still fits within the display width
         if (x <= (128 - 8)) {
             uint8_t c = (uint8_t)*str;
             if (c >= 32 && c <= 126) {

@@ -1,3 +1,14 @@
+/**
+ * @file explorer_irblaster.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the main implementation for the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -19,7 +30,7 @@
 
 static const char *TAG = "EXPLORER_MAIN";
 
-// Lista exata de comandos a serem aprendidos em sequência
+/** @brief Array of strings representing the available IR actions */
 static const char *IR_ACTIONS[] = {
     "LIGAR",
     "DESLIGAR",
@@ -32,13 +43,14 @@ static const char *IR_ACTIONS[] = {
     "24 C",
     "25 C"
 };
-#define TOTAL_ACTIONS (sizeof(IR_ACTIONS) / sizeof(IR_ACTIONS[0]))
+#define TOTAL_ACTIONS (sizeof(IR_ACTIONS) / sizeof(IR_ACTIONS[0]))  /** < Total number of available IR actions */
 
-// Fila para mensagens MQTT recebidas
-QueueHandle_t g_mqtt_queue = NULL;      // Mensagens recebidas (RX)
-QueueHandle_t g_mqtt_tx_queue = NULL;   // Mensagens para Enviar (TX)
+/** @brief Queue handle for MQTT messages received */
+QueueHandle_t g_mqtt_queue = NULL;
+/** @brief Queue handle for MQTT messages to be sent */
+QueueHandle_t g_mqtt_tx_queue = NULL;
 
-// Configura os GPIOs dos botões
+/** @brief Initializes the buttons GPIOs */
 static void buttons_init(void) {
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << BUTTON_1_GPIO) | (1ULL << BUTTON_2_GPIO), // GPIO5 e GPIO34
@@ -50,14 +62,15 @@ static void buttons_init(void) {
     gpio_config(&io_conf);
 }
 
-// Checa se ambos os botões foram pressionados no boot
+/** @brief Checks if both buttons were pressed during boot */
 static bool check_learning_mode_trigger(void) {
     return (gpio_get_level(BUTTON_1_GPIO) != 0) && (gpio_get_level(BUTTON_2_GPIO) != 0);
 }
 
 /**
- * Sincroniza a hora (NTP) e dispara diretamente o sinal IR do agendamento 
- * retido mais próximo do horário atual.
+ * @brief Checks for pending schedules and runs the most recent one
+ * 
+ * @return true if a schedule was executed, false otherwise 
  */
 bool check_and_run_schedules(void) {
     struct tm timeinfo;
@@ -73,7 +86,7 @@ bool check_and_run_schedules(void) {
     int max_passed_minutes = -1;
     schedule_t best_sched;
 
-    // --- Varre os agendamentos da NVS ---
+    // --- Run through all schedules to find the most recent one that has passed ---
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         schedule_t sched;
         if (explorer_memory_load_schedule((uint8_t)i, &sched)) {
@@ -85,7 +98,7 @@ bool check_and_run_schedules(void) {
                 sscanf(sched.time, "%d:%d", &sched_hour, &sched_min);
                 int sched_minutes = (sched_hour * 60) + sched_min;
 
-                // Seleciona o agendamento mais recente que já passou (ou que é o atual)
+                // Select the most recent schedule that has passed (closest to the current time)
                 if (sched_minutes <= current_minutes) {
                     if (sched_minutes > max_passed_minutes) {
                         max_passed_minutes = sched_minutes;
@@ -97,12 +110,12 @@ bool check_and_run_schedules(void) {
         }
     }
 
-    // --- Executa o agendamento recuperado/atual ---
+    // --- Execute the found schedule ---
     if (best_schedule_id != -1) {
         ESP_LOGI(TAG, "Agendamento válido encontrado: ID %d [%s] - Ação: %s",
                  best_schedule_id, best_sched.time, best_sched.action);
 
-        execute_schedule_action(&best_sched); // Dispara o IR via hardware
+        execute_schedule_action(&best_sched); // Trigger the IR command associated with the schedule
     } else {
         ESP_LOGI(TAG, "Nenhum agendamento pendente para o dia/horário atual.");
     }
@@ -110,6 +123,11 @@ bool check_and_run_schedules(void) {
     return true;
 }
 
+/**
+ * @brief Task for checking pending schedules every minute and executing the most recent one if applicable.
+ * 
+ * @param pvParameters Pointer to task parameters (not used)
+ */
 static void schedule_checker_task(void *pvParameters) {
     struct tm timeinfo;
     int last_processed_minute = -1;
@@ -118,41 +136,43 @@ static void schedule_checker_task(void *pvParameters) {
 
     while (1) {
         if (rtc_manager_get_time(&timeinfo)) {
-            // Executa apenas quando houver a virada do minuto
+            // Execute the schedule only if the minute has changed since the last check
             if (timeinfo.tm_min != last_processed_minute) {
                 last_processed_minute = timeinfo.tm_min;
 
                 ESP_LOGI(TAG, "Mudança de minuto (%02d:%02d). Verificando agendamentos...",
                          timeinfo.tm_hour, timeinfo.tm_min);
 
-                // Reavalia a NVS para o minuto atual
+                // Check and execute any pending schedules
                 check_and_run_schedules();
             }
         }
 
-        // Checa a transição do tempo a cada 1 segundo
+        // Check the schedule every second to ensure we catch the minute change
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 /**
- * Converte um comando IR capturado para o JSON no formato esperado
- * e enfileira na g_mqtt_tx_queue.
+ * @brief Convert a learned IR command into a JSON string and enqueue it for MQTT transmission.
+ * 
+ * @param action_name Name of the action associated with the command
+ * @param cmd Pointer to the captured IR command
  */
-static void enqueue_learned_ir_json(int cmd_index, const char *action_name, const ir_raw_command_t *cmd) {
+static void enqueue_learned_ir_json(const char *action_name, const ir_raw_command_t *cmd) {
     if (g_mqtt_tx_queue == NULL) return;
 
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) return;
 
-    cJSON_AddNumberToObject(root, "cmd_id", cmd_index);
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_SYNC_LEARNED);
     cJSON_AddStringToObject(root, "action", action_name);
     cJSON_AddNumberToObject(root, "length", cmd->length);
 
     cJSON *raw_array = cJSON_CreateArray();
     if (raw_array != NULL) {
         for (int i = 0; i < cmd->length; i++) {
-            // Acessa o array 'data' pertencente à struct ir_raw_command_t
+            // Get the raw data and add it to the JSON array
             cJSON_AddItemToArray(raw_array, cJSON_CreateNumber(cmd->data[i]));
         }
         cJSON_AddItemToObject(root, "raw_data", raw_array);
@@ -173,7 +193,10 @@ static void enqueue_learned_ir_json(int cmd_index, const char *action_name, cons
     cJSON_Delete(root);
 }
 
-// Rotina de aprendizado do Ar-Condicionado
+/**
+ * @brief Run the IR learning routine
+ * 
+ */
 static void run_ir_learning_routine(void) {
     ESP_LOGI(TAG, "Iniciando modo de aprendizado IR...");
     display_show_text("MODO APRENDIZADO\nINICIANDO...");
@@ -184,7 +207,7 @@ static void run_ir_learning_routine(void) {
     char display_buf[64];
     int current_idx = 0;
 
-    // Aguarda soltar os botões antes de começar
+    // Wait for both buttons to be released before starting the learning routine
     while (gpio_get_level(BUTTON_1_GPIO) != 0 || gpio_get_level(BUTTON_2_GPIO) != 0) {
         vTaskDelay(pdMS_TO_TICKS(50));
     }
@@ -195,7 +218,7 @@ static void run_ir_learning_routine(void) {
             display_show_text(display_buf);
         }
 
-        // 1. Escuta o receptor RMT IR (permite sobrescrever mandando outro sinal)
+        // 1. Listen for the IR receiver
         if (ir_read_last_command(&captured_cmd)) {
             has_cmd = true;
             ESP_LOGI(TAG, "Comando capturado para [%s] (Símbolos: %d)", IR_ACTIONS[current_idx], captured_cmd.length);
@@ -204,13 +227,13 @@ static void run_ir_learning_routine(void) {
             display_show_text(display_buf);
         }
 
-        // 2. Botão 1 (GPIO5): Testar quantas vezes quiser
+        // 2. Button 1 (GPIO5): Test the captured command via LED TX
         if (gpio_get_level(BUTTON_1_GPIO) != 0) {
             if (has_cmd) {
                 snprintf(display_buf, sizeof(display_buf), "%s\nTESTANDO...", IR_ACTIONS[current_idx]);
                 display_show_text(display_buf);
                 
-                // Emite o comando capturado via LED TX
+                // Send a test IR command to verify the captured command
                 ir_send_command(&captured_cmd);
                 vTaskDelay(pdMS_TO_TICKS(400));
 
@@ -225,14 +248,14 @@ static void run_ir_learning_routine(void) {
             while (gpio_get_level(BUTTON_1_GPIO) != 0) vTaskDelay(pdMS_TO_TICKS(50));
         }
 
-        // 3. Botão 2 (GPIO34): Gravar na NVS e passar para o próximo
+        // 3. Botton 2 (GPIO34): Save the captured command to NVS and enqueue it for MQTT
         if (gpio_get_level(BUTTON_2_GPIO) != 0) {
             if (has_cmd) {
                 if (explorer_memory_save_ir(current_idx, &captured_cmd)) {
                     ESP_LOGI(TAG, "Comando [%s] gravado na NVS!", IR_ACTIONS[current_idx]);
                     
-                    // Enfileira mensagem JSON na fila MQTT TX
-                    enqueue_learned_ir_json(current_idx, IR_ACTIONS[current_idx], &captured_cmd);
+                    // Enqueue the learned IR command in JSON format for MQTT transmission
+                    enqueue_learned_ir_json(IR_ACTIONS[current_idx], &captured_cmd);
 
                     snprintf(display_buf, sizeof(display_buf), "%s\nCOMANDO OK!", IR_ACTIONS[current_idx]);
                 } else {
@@ -253,7 +276,8 @@ static void run_ir_learning_routine(void) {
             while (gpio_get_level(BUTTON_2_GPIO) != 0) vTaskDelay(pdMS_TO_TICKS(50));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // Checa a transição do tempo a cada 1 segundo
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     display_show_text("APRENDIZADO\nCONCLUIDO!");
@@ -261,18 +285,22 @@ static void run_ir_learning_routine(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 }
 
-// Task que consome as mensagens recebidas via MQTT
+/**
+ * @brief Task that consumes messages received via MQTT
+ * 
+ * @param pvParameters Pointer to the task parameters
+ */
 static void mqtt_consumer_task(void *pvParameters) {
-    // Alocado estaticamente para NÃO consumir a pilha (stack) da task
+    // Allocate the mqtt_message_t structure on the stack to avoid dynamic memory allocation
     static mqtt_message_t msg;
     int inactivity_counter = 0;
     
     ESP_LOGI(TAG, "Task consumidora MQTT iniciada com sucesso.");
 
     while (1) {
-        // Aguarda pacote por no máximo 1 segundo (1000ms)
-        if (xQueueReceive(g_mqtt_queue, &msg, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            // Comando recebido: reseta o contador de inatividade
+        // Wait for a message from the MQTT queue with a timeout of 1 second
+        if (xQueueReceive(g_mqtt_queue, &msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_RECEIVE_TIMOUT_TICKS)) == pdTRUE) {
+            // Received a command: reset the inactivity counter
             inactivity_counter = 0;
             ESP_LOGI(TAG, "Mensagem recebida da fila: %s", msg.payload);
 
@@ -307,15 +335,15 @@ static void mqtt_consumer_task(void *pvParameters) {
                                 const char *action_str = action_item->valuestring;
                                 int cmd_index = -1;
 
-                                // Mapeamento da string da 'action' recebida para o índice NVS
+                                // Map the "action" string to the corresponding command index
                                 if (strcmp(action_str, "LIGAR") == 0) {
                                     cmd_index = 0;
                                 } else if (strcmp(action_str, "DESLIGAR") == 0) {
                                     cmd_index = 1;
                                 } else if (strncmp(action_str, "SET_TEMP_", 9) == 0) {
-                                    int temp = atoi(&action_str[9]); // Extrai o valor numérico após "SET_TEMP_"
+                                    int temp = atoi(&action_str[9]); // Extract the numeric value after "SET_TEMP_"
                                     if (temp >= 18 && temp <= 25) {
-                                        // Índices 2 a 9 mapeiam para as temperaturas 18°C a 25°C
+                                        // Indices 2 to 9 map to temperatures from 18°C to 25°C
                                         cmd_index = 2 + (temp - 18);
                                     }
                                 }
@@ -325,14 +353,14 @@ static void mqtt_consumer_task(void *pvParameters) {
                                     if (explorer_memory_load_ir(cmd_index, &ir_cmd)) {
                                         ESP_LOGI(TAG, "Disparando comando IR [%s] (Índice: %d) via hardware...", action_str, cmd_index);
                                         
-                                        // Dispara o sinal infravermelho via hardware
+                                        // Trigger the IR command using the hardware
                                         ir_send_command(&ir_cmd);
 
                                         char disp_msg[64];
                                         snprintf(disp_msg, sizeof(disp_msg), "IR ENVIADO:\n%s", action_str);
                                         display_show_text(disp_msg);
 
-                                        // Prepara e envia o ACK de execução IR (cmd_id: 4)
+                                        // Prepare and send the IR execution ACK (cmd_id: 4)
                                         mqtt_message_t ack_msg;
                                         snprintf(ack_msg.payload, sizeof(ack_msg.payload),
                                                 "{\"cmd_id\":%d,\"status\":\"OK\",\"action\":\"%s\"}", CMD_EXECUTE_IR_ACK, action_str);
@@ -389,7 +417,7 @@ static void mqtt_consumer_task(void *pvParameters) {
 
                                 if (explorer_memory_save_wifi_credentials(ssid_item->valuestring, pass_item->valuestring)) {
                                     display_show_text("WIFI ATUALIZADO");
-                                    // 1. Prepara e envia a mensagem ACK para a fila TX
+                                    // 1. Prepare the Wi-Fi ACK (cmd_id: 8)
                                     mqtt_message_t ack_msg;
                                     snprintf(ack_msg.payload, sizeof(ack_msg.payload),
                                             "{\"cmd_id\":%d,\"status\":\"OK\"}", CMD_SET_WIFI_ACK);
@@ -437,13 +465,13 @@ static void mqtt_consumer_task(void *pvParameters) {
                                         snprintf(disp_msg, sizeof(disp_msg), "AGEND %d SALVO\n%s %s", sched_id, sched.time, sched.action);
                                         display_show_text(disp_msg);
 
-                                        // 1. Prepara o ACK do Agendamento (cmd_id: 10)
+                                        // 1. Prepare the Schedule ACK (cmd_id: 10)
                                         mqtt_message_t ack_msg;
                                         snprintf(ack_msg.payload, sizeof(ack_msg.payload),
                                                  "{\"cmd_id\":%d,\"status\":\"OK\",\"schedule_id\":%d}",
                                                  CMD_SET_SCHEDULE_ACK, sched_id);
 
-                                        // 2. Enfileira para envio via MQTT TX
+                                        // 2. Enqueue the ACK message for MQTT transmission
                                         if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
                                             ESP_LOGE(TAG, "Falha ao enfileirar ACK do agendamento!");
                                         }
@@ -465,6 +493,65 @@ static void mqtt_consumer_task(void *pvParameters) {
                         ESP_LOGI(TAG, "Tratando CMD_SET_SCHEDULE_ACK");
                         break;
 
+                    case CMD_SET_IR_RAW:
+                    {
+                        ESP_LOGI(TAG, "Tratando CMD_SET_IR_RAW");
+                        display_show_text("CMD: SET IR RAW");
+
+                        cJSON *action_item = cJSON_GetObjectItem(json, "action");
+                        cJSON *length_item = cJSON_GetObjectItem(json, "length");
+                        cJSON *raw_data_array = cJSON_GetObjectItem(json, "raw_data");
+
+                        if (cJSON_IsString(action_item) && cJSON_IsNumber(length_item) && cJSON_IsArray(raw_data_array)) {
+                            const char *action_str = action_item->valuestring;
+                            int cmd_index = explorer_memory_get_index_by_action(action_str);
+
+                            if (cmd_index >= 0) {
+                                ir_raw_command_t new_cmd;
+                                memset(&new_cmd, 0, sizeof(ir_raw_command_t));
+
+                                int num_samples = cJSON_GetArraySize(raw_data_array);
+                                // Define the length of the new command based on the number of samples received, ensuring it does not exceed MAX_BUFFER_SYMBOLS
+                                new_cmd.length = (num_samples < MAX_BUFFER_SYMBOLS) ? num_samples : MAX_BUFFER_SYMBOLS;
+
+                                for (int i = 0; i < new_cmd.length; i++) {
+                                    cJSON *element = cJSON_GetArrayItem(raw_data_array, i);
+                                    if (cJSON_IsNumber(element)) {
+                                        new_cmd.data[i] = (uint16_t)element->valueint;
+                                    }
+                                }
+
+                                // Save the new IR command in NVS at the corresponding index
+                                if (explorer_memory_save_ir(cmd_index, &new_cmd)) {
+                                    ESP_LOGI(TAG, "IR Raw para '%s' (Index %d) salvo com sucesso!", action_str, cmd_index);
+
+                                    char disp_msg[64];
+                                    snprintf(disp_msg, sizeof(disp_msg), "RAW SALVO:\n%s", action_str);
+                                    display_show_text(disp_msg);
+
+                                    // Prepare the ACK message for CMD_SET_IR_RAW_ACK (cmd_id: 12)
+                                    mqtt_message_t ack_msg;
+                                    snprintf(ack_msg.payload, sizeof(ack_msg.payload),
+                                            "{\"cmd_id\":%d,\"status\":\"OK\"}", CMD_SET_IR_RAW_ACK);
+
+                                    if (xQueueSend(g_mqtt_tx_queue, &ack_msg, pdMS_TO_TICKS(MQTT_TX_QUEUE_SEND_TIMOUT_TICKS)) != pdTRUE) {
+                                        ESP_LOGE(TAG, "Falha ao enfileirar ACK de SET IR RAW!");
+                                    }
+                                } else {
+                                    ESP_LOGE(TAG, "Erro ao salvar IR Raw na NVS");
+                                    display_show_text("ERRO SALVAR RAW");
+                                }
+                            } else {
+                                ESP_LOGE(TAG, "Ação IR não reconhecida: %s", action_str);
+                                display_show_text("ACAO DESCONHECIDA");
+                            }
+                        } else {
+                            ESP_LOGE(TAG, "Payload JSON de CMD_SET_IR_RAW inválido!");
+                            display_show_text("JSON RAW INVALIDO");
+                        }
+                    }
+                    break;
+
                     default:
                         ESP_LOGW(TAG, "Comando desconhecido recebido: %d", cmd_id);
                         display_show_text("CMD DESCONHECIDO");
@@ -476,15 +563,14 @@ static void mqtt_consumer_task(void *pvParameters) {
 
             cJSON_Delete(json);
         } else {
-            // Nenhum pacote recebido nos últimos 1000ms: incrementa o timer
+            // Any packet received resets the inactivity counter, so if we reach here, it means no packet was received in the last second
             inactivity_counter++;
             ESP_LOGD(TAG, "Inatividade: %d/%d s", inactivity_counter, MQTT_INTERACTIVITY_TIMEOUT);
 
             if (inactivity_counter >= MQTT_INTERACTIVITY_TIMEOUT) {
                 ESP_LOGW(TAG, "Tempo limite de inatividade (%d s) atingido. Encerrando task...", MQTT_INTERACTIVITY_TIMEOUT);
                 display_clear();
-                
-                // Finaliza e remove a própria task da memória do FreeRTOS
+
                 mqtt_stop();
                 rtc_manager_process_schedules_and_sleep();
                 vTaskDelete(NULL);
@@ -493,7 +579,10 @@ static void mqtt_consumer_task(void *pvParameters) {
     }
 }
 
-// Esvazia a fila de saída e envia todos os JSONs gravados via MQTT
+/**
+ * @brief Flushes the MQTT TX queue and sends all queued messages
+ * 
+ */
 static void flush_mqtt_tx_queue(void) {
     mqtt_message_t tx_msg;
     int count = 0;
@@ -504,13 +593,13 @@ static void flush_mqtt_tx_queue(void) {
         } else {
             ESP_LOGE(TAG, "Falha ao publicar comando IR via MQTT");
         }
-        vTaskDelay(pdMS_TO_TICKS(200)); // Pequeno delay entre publicações
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
 /**
- * Monta e enfileira a telemetria inicial com o RSSI atual
- * para envio via fila TX de MQTT.
+ * @brief build and enqueue the telemetry JSON message for MQTT transmission
+ * @return true if the telemetry message was successfully enqueued, false otherwise
  */
 bool send_telemetry(void) {
     if (g_mqtt_tx_queue == NULL) return false;
@@ -531,13 +620,20 @@ bool send_telemetry(void) {
     }
 }
 
-// Callback do Wi-Fi
+/**
+ * @brief Callback function for handling Wi-Fi status changes
+ * @param title The title of the status message
+ * @param subtitle The subtitle of the status message
+ */
 static void on_wifi_status_change(const char *title, const char *subtitle) {
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "%s\n%s", title, subtitle);
     display_show_text(buffer);
 }
 
+/**
+ * @brief Main application function
+ */
 void app_main(void)
 {
     if (!explorer_memory_init()) {
@@ -558,7 +654,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Falha ao criar fila TX MQTT!");
     }
 
-    // Se ligar com GPIO5 + GPIO34 pressionados
+    // Learning mode trigger: if both buttons are pressed during boot, enter IR learning routine
     if (check_learning_mode_trigger()) {
         run_ir_learning_routine();
     }
@@ -567,9 +663,8 @@ void app_main(void)
     bool isHourSync = check_and_run_schedules();
     xTaskCreate(schedule_checker_task, "schedule_checker_task", 3072, NULL, 4, NULL);
 
-    // Em app_main() dentro de main.c
     if (!wifi_is_connected()) {
-        // Tenta 3x na rede do cliente e 3x na rede conectaSenFio
+        // 3x try to connect to Wi-Fi
         wifi_connect_init(on_wifi_status_change);
     }
 
@@ -582,14 +677,11 @@ void app_main(void)
             check_and_run_schedules();
         }
 
-        // 2. Tenta conectar no MQTT 3 Vezes
+        // 2. Try to connect to the MQTT broker with a maximum of 3 retries
         if (mqtt_init_with_retry(3)) {
             display_show_text("WIFI OK\nONLINE");
 
-            // Publica status no tópico e sobrescreve (Retain)
-            mqtt_publish_status("{\"status\":\"online\"}", false);
-
-            // 3. Cria Fila e inicia a Task consumidora dos comandos
+            // 3. Create the MQTT consumer task and the TX queue for sending messages
             g_mqtt_queue = xQueueCreate(10, sizeof(mqtt_message_t));
             if (g_mqtt_queue != NULL) {
                 xTaskCreate(mqtt_consumer_task, "mqtt_consumer_task", 8192, NULL, 5, NULL);
@@ -597,18 +689,22 @@ void app_main(void)
                 ESP_LOGE(TAG, "Falha ao criar fila MQTT!");
             }
 
-            // 4. Envia telemetria inicial via MQTT
+            // 4. Send the telemetry message to the broker
             send_telemetry();
 
         } else {
-            // Se falhar a conexão MQTT após 3 tentativas
+            // If the MQTT connection fails, display an error message and go to sleep
             ESP_LOGE(TAG, "Erro na conexão MQTT!");
-            display_show_text("ERRO");
+            display_show_text("ERRO WIFI");
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            display_clear();
             rtc_manager_process_schedules_and_sleep();
         }
     } else {
         ESP_LOGE(TAG, "Exibindo ERRO WIFI no display...");
         display_show_text("ERRO WIFI");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        display_clear();
         rtc_manager_process_schedules_and_sleep();
     }
 
@@ -616,7 +712,7 @@ void app_main(void)
 
         if(mqtt_is_connected())
         {
-            // Garante o envio imediato da mensagem pendente na fila ao broker
+            // Flush the MQTT TX queue to send any pending messages
             flush_mqtt_tx_queue();
         }
         vTaskDelay(pdMS_TO_TICKS(1000));

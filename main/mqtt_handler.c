@@ -1,3 +1,14 @@
+/**
+ * @file mqtt_handler.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the implementation of MQTT communication handling for the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "mqtt_handler.h"
 #include "wifi_handler.h"
 #include "config.h"
@@ -13,12 +24,11 @@ static const char *TAG = "MQTT_HANDLER";
 
 #define MQTT_CONNECTED_BIT BIT0
 
-static EventGroupHandle_t s_mqtt_event_group = NULL;
-static esp_mqtt_client_handle_t mqtt_client = NULL;
-static char s_mac_str[13] = {0};
+static EventGroupHandle_t s_mqtt_event_group = NULL;    /**< Event group for MQTT connection status */
+static esp_mqtt_client_handle_t mqtt_client = NULL;     /**< MQTT client handle */
+static char s_mac_str[13] = {0};                        /**< MAC address string */
 
-// Fila global declarada em explorer_irblaster.c
-extern QueueHandle_t g_mqtt_queue;
+extern QueueHandle_t g_mqtt_queue;                      /**< Global MQTT message queue */
 
 bool mqtt_is_connected(void) {
     if (s_mqtt_event_group == NULL) return false;
@@ -42,7 +52,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
             }
             
-            // Subscreve no tópico de envio de comandos para este dispositivo
+            // Subscribe to the topic "explorer/device/<MAC_ADDRESS>/set" for receiving commands
             char sub_topic[64];
             snprintf(sub_topic, sizeof(sub_topic), "explorer/device/%s/set", s_mac_str);
             esp_mqtt_client_subscribe(mqtt_client, sub_topic, 1);
@@ -56,7 +66,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 memcpy(msg.payload, event->data, len);
                 msg.payload[len] = '\0';
 
-                // Envia a mensagem recebida do broker para a Task consumidora
+                // Send a message to the MQTT queue for processing in another task
                 if (xQueueSend(g_mqtt_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
                     ESP_LOGE(TAG, "Fila de mensagens MQTT cheia! Descartando pacote.");
                 }
@@ -102,12 +112,12 @@ bool mqtt_init_with_retry(int max_retries) {
         xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
         esp_mqtt_client_start(mqtt_client);
 
-        // Aguarda até 5 segundos em cada tentativa
+        // Wait for the MQTT connection event with a timeout of 5 seconds
         EventBits_t bits = xEventGroupWaitBits(s_mqtt_event_group,
                                                MQTT_CONNECTED_BIT,
                                                pdFALSE,
                                                pdFALSE,
-                                               pdMS_TO_TICKS(5000));
+                                               pdMS_TO_TICKS(MQTT_EVENT_GROUPS_WAIT_BITS_TIMEOUT_MS));
 
         if (bits & MQTT_CONNECTED_BIT) {
             ESP_LOGI(TAG, "MQTT Conectado com Sucesso!");

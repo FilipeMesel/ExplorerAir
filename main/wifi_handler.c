@@ -1,3 +1,14 @@
+/**
+ * @file wifi_handler.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the implementation of Wi-Fi communication handling for the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "wifi_handler.h"
 #include "config.h"
 
@@ -15,15 +26,15 @@ static const char *TAG = "WIFI_HANDLER";
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-#define MAX_RETRY_PER_NET  3
+#define MAX_RETRY_PER_NET  3                            /** Maximum number of retry attempts per network */
 
-static EventGroupHandle_t s_wifi_event_group = NULL;
-static esp_netif_t *s_netif_sta = NULL;
-static wifi_status_cb_t s_status_cb = NULL;
+static EventGroupHandle_t s_wifi_event_group = NULL;    /** Event group for Wi-Fi connection status */
+static esp_netif_t *s_netif_sta = NULL;                 /** Wi-Fi station interface */
+static wifi_status_cb_t s_status_cb = NULL;             /** Wi-Fi status callback function */
 
-static int s_retry_count = 0;
-static bool s_is_connected = false;
-static bool s_is_failed = false;
+static int s_retry_count = 0;                           /** Retry count for Wi-Fi connection attempts */
+static bool s_is_connected = false;                     /** Wi-Fi connection status */
+static bool s_is_failed = false;                        /** Wi-Fi connection failure status */
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                             int32_t event_id, void* event_data)
@@ -48,7 +59,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-// Carrega as credenciais da NVS
 static bool wifi_load_credentials(char *ssid, char *pass) {
     return explorer_memory_load_wifi_credentials(ssid, 32, pass, 64);
 }
@@ -124,7 +134,7 @@ void wifi_connect_init(wifi_status_cb_t cb) {
     char client_pass[64] = {0};
     bool has_client_credentials = wifi_load_credentials(client_ssid, client_pass);
 
-    // 1. Tenta 3x na Rede do Cliente (se houver credenciais gravadas)
+    // 1. Try 3 times on the client's network (if credentials are saved)
     if (has_client_credentials && strlen(client_ssid) > 0) {
         if (try_connect_network(client_ssid, client_pass, "WIFI CLIENTE")) {
             return;
@@ -133,12 +143,17 @@ void wifi_connect_init(wifi_status_cb_t cb) {
         ESP_LOGW(TAG, "Sem credenciais do cliente presas na NVS. Pulando para Fallback...");
     }
 
-    // 2. Tenta 3x na Rede Fallback (conectaSenFio)
-    if (try_connect_network(WIFI_FALLBACK_SSID, WIFI_FALLBACK_PASS, "WIFI FALLBACK")) {
-        return;
+    // 2. Try 3 times on each of the N fallback networks defined in config.h
+    for (size_t i = 0; i < NUM_FALLBACK_NETWORKS; i++) {
+        char label_buf[32];
+        snprintf(label_buf, sizeof(label_buf), "FALLBACK %u", (unsigned int)(i + 1));
+
+        if (try_connect_network(WIFI_FALLBACK_NETWORKS[i].ssid, WIFI_FALLBACK_NETWORKS[i].pass, label_buf)) {
+            return;
+        }
     }
 
-    // Se falhar 3x na principal + 3x no fallback
+    // I fail the connection and set the failure status
     s_is_failed = true;
     s_is_connected = false;
     ESP_LOGE(TAG, "Todas as tentativas de Wi-Fi falharam.");

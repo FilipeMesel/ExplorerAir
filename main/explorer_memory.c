@@ -1,6 +1,18 @@
+/**
+ * @file explorer_memory.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief Implementation of memory management functions for the Explorer IR Blaster project, including saving and loading IR commands, WiFi credentials, and schedules.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "explorer_memory.h"
 #include "esp_log.h"
 #include "config.h"
+#include "explorer_structs.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -147,4 +159,28 @@ bool explorer_memory_load_schedule(uint8_t schedule_id, schedule_t *sched_out) {
 #else
     return false;
 #endif
+}
+
+/**
+ * @brief Gets the index of an action based on its string representation
+ *
+ * @param action_str The string representation of the action
+ * @return int The index of the action, or -1 if not found
+ */
+int explorer_memory_get_index_by_action(const char *action_str) {
+    if (action_str == NULL) return UNKNOWN_ACTION;
+
+    // Get the index based on the action string. This mapping should correspond to the order of actions defined in IR_ACTIONS.
+    if (strcmp(action_str, "LIGAR") == 0) return LIGAR;
+    if (strcmp(action_str, "DESLIGAR") == 0) return DESLIGAR;
+    if (strcmp(action_str, "18 C") == 0) return TEMP_18;
+    if (strcmp(action_str, "19 C") == 0) return TEMP_19;
+    if (strcmp(action_str, "20 C") == 0) return TEMP_20;
+    if (strcmp(action_str, "21 C") == 0) return TEMP_21;
+    if (strcmp(action_str, "22 C") == 0) return TEMP_22;
+    if (strcmp(action_str, "23 C") == 0) return TEMP_23;
+    if (strcmp(action_str, "24 C") == 0) return TEMP_24;
+    if (strcmp(action_str, "25 C") == 0) return TEMP_25;
+
+    return UNKNOWN_ACTION;
 }

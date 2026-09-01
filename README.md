@@ -186,7 +186,7 @@ Once complete, captured IR data arrays are uploaded via CMD 6.
 
 ```json
 {
-  "cmd_id":9,
+  "cmd_id":6,
   "action":"25 C",
   "length":128,
   "raw_data":[4402,4377,537,1608,536,536,536,1607,536,1608,535,536,537,535,535,1609,535,537,535,536,535,1608,536,536,535,537,534,1609,536,1607,535,537,536,1608,535,1609,535,536,536,1608,535,1608,535,1607,536,1609,536,1608,535,1608,536,536,535,1608,535,538,533,537,535,537,535,536,535,537,535,536,535,1608,535,1609,535,536,534,538,533,538,535,537,535,536,535,536,535,537,535,536,535,1608,535,1608,535,1608,536,1608,535,1608,536,1608,535,5190,4375,4379,534,1609,535,536,535,1609,535,1609,534,538,534,537,534,1610,534,537,535,537,532,1610,535,537,535,536,535,1608
@@ -204,6 +204,12 @@ Once complete, captured IR data arrays are uploaded via CMD 6.
 
 ```json
 {"cmd_id":10,"status":"OK","schedule_id":1}
+```
+
+* CMD 12 — [IMPLEMENTED] IR Raw ACK: Confirms receipt and successful saving of raw IR waveforms into NVS.
+
+```json
+{"cmd_id":12,"status":"OK"}
 ```
 
 #### 📥 Commands Received from Server (RX)
@@ -225,13 +231,24 @@ Once complete, captured IR data arrays are uploaded via CMD 6.
 * CMD 7 — [**IMPLEMENTED**] Wi-Fi Credentials: Receive a new WiFi SSID and Password.
 
 ```json
-{"cmd_id": 7, "ssid": "VIVOFIBRA-56ED_EXT", "password": "72233756ED"}
+{"cmd_id": 7, "ssid": "wifi_ssid", "password": "wifi_password"}
 ```
 
 * CMD 9 — [**IMPLEMENTED**] New schedule: Receive a new new schedule.
 
 ```json
 {"cmd_id": 9, "schedule_id": 1, "week_days": 5, "time": "10:05", "action": "SET_TEMP_18"}
+```
+
+* CMD 11 — [IMPLEMENTED] Set IR Raw Data: Receives raw IR pulse timings directly from the backend server to overwrite/save to NVS for a specific action (e.g. "25 C", "LIGAR").
+
+```json
+{
+  "cmd_id": 11,
+  "action": "25 C",
+  "length": 128,
+  "raw_data": [4402,4377,537,1608,536,536,536,1607,536,1608,535,536,537,535,535,1609,535,537,535,536,535,1608,536,536,535,537,534,1609,536,1607,535,537,536,1608,535,1609,535,536,536,1608,535,1608,535,1607,536,1609,536,1608,535,1608,536,536,535,1608,535,538,533,537,535,537,535,536,535,537,535,536,535,1608,535,1609,535,536,534,538,533,538,535,537,535,536,535,536,535,537,535,536,535,1608,535,1608,535,1608,536,1608,535,1608,536,1608,535,5190,4375,4379,534,1609,535,536,535,1609,535,1609,534,538,534,537,534,1610,534,537,535,537,532,1610,535,537,535,536,535,1608]
+}
 ```
 
 ---
@@ -328,7 +345,7 @@ After completing network exchanges and executing pending tasks, the device prepa
 | :--- | :--- | :--- |
 | **IR Capture & Transmission** | Raw IR signal transmission via RMT (38 kHz) | Completed |
 | **IR Capture & Transmission** | Raw IR pulse capture via RMT RX | Completed |
-| **IR Capture & Transmission** | Receive raw IR waveform via MQTT and save directly to NVS Flash | Pending |
+| **IR Capture & Transmission** | Receive raw IR waveform via MQTT and save directly to NVS Flash | Completed |
 | **Interface & Peripherals** | SSD1306 OLED display driver via I2C with FreeRTOS Mutex | Completed |
 | **Interface & Peripherals** | Physical button handling and debounce (GPIO 5 & GPIO 34) | Completed |
 | **Communication & Protocol** | Wi-Fi management with 6 connection retries (3 per AP) and display error fallback | Completed |
