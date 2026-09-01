@@ -157,6 +157,9 @@ void display_show_text(const char *str) {
     if (line_len * 8 < 128) {
         x = (128 - (line_len * 8)) / 2;
     }
+    if (line_len * 8 < 128) {
+        x = (128 - (line_len * 8)) / 2;
+    }
 
     while (*str) {
         // Interpret newline characters to move to the next line
