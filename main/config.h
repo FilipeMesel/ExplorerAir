@@ -1,49 +1,65 @@
+/**
+ * @file config.h
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief This file contains the configuration settings for the Explorer IR Blaster project, 
+ * including GPIO pin assignments, network settings, NVS keys, MQTT settings, OLED display settings, 
+ * IR settings, and time/schedule settings.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
 #include "driver/gpio.h"
 
-// --- MAPEAMENTO DE GPIOS (DeviceTree Centralizado) ---
-#define I2C_SDA_PIN          GPIO_NUM_18
-#define I2C_SCL_PIN          GPIO_NUM_23
+// --- GPIO SETTINGS ---
+#define I2C_SDA_PIN          GPIO_NUM_18    /**I2C SDA GPIO PIN */
+#define I2C_SCL_PIN          GPIO_NUM_23    /**I2C SCL GPIO PIN */
 
-#define BUTTON_1_GPIO        GPIO_NUM_5   // Testar IR / Botão 1
-#define BUTTON_2_GPIO        GPIO_NUM_34  // Salvar comando / Botão 2
-#define GPIO_OUTPUT_PIN      GPIO_NUM_22   // LED de status / GPIO 22
+#define BUTTON_1_GPIO        GPIO_NUM_5     /**IR Test Button */
+#define BUTTON_2_GPIO        GPIO_NUM_34    /**Save Command Button */
+#define GPIO_OUTPUT_PIN      GPIO_NUM_22    /**Status LED Button */
 
-#define IR_RECEIVE_PIN       GPIO_NUM_15  // PINO RX IR
-#define IR_SEND_PIN          GPIO_NUM_4   // PINO TX IR
+#define IR_RECEIVE_PIN       GPIO_NUM_15    /**IR Receive Pin */
+#define IR_SEND_PIN          GPIO_NUM_4     /**IR Send Pin */
 
-// --- CONFIGURAÇÕES DE REDE
-#define WIFI_FALLBACK_SSID    "conectaSenFio"
-#define WIFI_FALLBACK_PASS    "123456789"
+// --- NETWORK SETTINGS ---
+#define WIFI_FALLBACK_SSID    "conectaSenFio"   /**WiFi Fallback SSID */
+#define WIFI_FALLBACK_PASS    "123456789"       /**WiFi Fallback Password */
 
-// --- CHAVES NVS ---
-#define NVS_WIFI_NAMESPACE      "wifi_cfg"
-#define NVS_KEY_SSID            "ssid"
-#define NVS_KEY_PASS            "password"
+// --- NVS KEYS ---
+#define NVS_WIFI_NAMESPACE      "wifi_cfg"      /**WiFi Configuration Namespace */
+#define NVS_KEY_SSID            "ssid"          /**WiFi SSID Key */
+#define NVS_KEY_PASS            "password"      /**WiFi Password Key */
 
-#define NVS_IR_NAMESPACE        "ir_codes"
+#define NVS_IR_NAMESPACE        "ir_codes"      /**IR Codes Namespace */
 
-#define NVS_SCHEDULE_NAMESPACE  "schedules"
+#define NVS_SCHEDULE_NAMESPACE  "schedules"     /**Schedule Configuration Namespace */
 
-// --- CONFIGURAÇÕES DO MQTT ---
-#define MQTT_BROKER_URI       "mqtt://broker.hivemq.com:1883"
+// --- MQTT SETTINGS ---
+#define MQTT_BROKER_URI       "mqtt://broker.hivemq.com:1883"   /**MQTT Broker URI */
 
-// --- CONFIGURAÇÕES DO DISPLAY ---
-#define I2C_PORT_NUM         I2C_NUM_0
-#define OLED_I2C_ADDRESS     0x3C
+// --- OLED DISPLAY SETTINGS ---
+#define I2C_PORT_NUM         I2C_NUM_0  /**I2C Port Number */
+#define OLED_I2C_ADDRESS     0x3C       /**OLED I2C Address */
 
-// --- INFRAVERMELHO ---
-#define IR_RESOLUTION_HZ     1000000
-#define CARRIER_FREQ_HZ      38000
-#define MAX_BUFFER_SYMBOLS   400
+// --- INFRACHTO ---
+#define IR_RESOLUTION_HZ     1000000    /**IR Resolution in Hertz */
+#define CARRIER_FREQ_HZ      38000      /**Carrier Frequency in Hertz */
+#define MAX_BUFFER_SYMBOLS   400        /**Maximum buffer symbols */
 
-// --- CONFIGURAÇÕES DE TEMPO ---
-#define MQTT_INTERACTIVITY_TIMEOUT       30 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
-#define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS  100 // Timeout para envio de mensagens na fila MQTT TX
+// --- TIME SETTINGS  ---
+#define MQTT_INTERACTIVITY_TIMEOUT              30  /**MQTT Interactivity Timeout in seconds */
+#define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS         100 /**Timeout for sending messages in the MQTT TX queue */
+#define MQTT_TX_QUEUE_RECEIVE_TIMOUT_TICKS      1000 /**Timeout for receiving messages in the MQTT TX queue */
+#define MQTT_EVENT_GROUPS_WAIT_BITS_TIMEOUT_MS  5000 /**Timeout for waiting on MQTT event groups in milliseconds */
 
-// --- CONFIGURAÇÕES DE SCHEDULE ---
-#define MAX_SCHEDULES 10
+// --- SCHEDULE SETTINGS ---
+#define MAX_SCHEDULES 10                        /**Maximum number of schedules */
 
 #endif // CONFIG_H

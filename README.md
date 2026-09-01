@@ -225,7 +225,7 @@ Once complete, captured IR data arrays are uploaded via CMD 6.
 * CMD 7 — [**IMPLEMENTED**] Wi-Fi Credentials: Receive a new WiFi SSID and Password.
 
 ```json
-{"cmd_id": 7, "ssid": "VIVOFIBRA-56ED_EXT", "password": "72233756ED"}
+{"cmd_id": 7, "ssid": "wifi_ssid", "password": "wifi_password"}
 ```
 
 * CMD 9 — [**IMPLEMENTED**] New schedule: Receive a new new schedule.

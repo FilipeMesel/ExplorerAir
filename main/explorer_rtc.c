@@ -1,3 +1,14 @@
+/**
+ * @file explorer_rtc.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief Implementation of RTC (Real-Time Clock) management functions for the Explorer IR Blaster project.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "explorer_rtc.h"
 #include "explorer_memory.h"
 #include "explorer_structs.h"
@@ -22,7 +33,7 @@ static void time_sync_notification_cb(struct timeval *tv) {
 void rtc_manager_init(void) {
 #ifdef _INCLUDE_EXTERNAL_RTC_
     ESP_LOGI(TAG, "Modo RTC: EXTERNO (HW RTC)");
-    // TODO: Inicializar I2C e driver do RTC externo aqui
+    // TODO: Initialize the external RTC hardware (e.g., DS3231) and set the time if necessary
 #else
     ESP_LOGI(TAG, "Modo RTC: INTERNO (ESP32 RTC)");
 #endif
@@ -70,7 +81,7 @@ bool rtc_manager_get_time(struct tm *timeinfo) {
     time_t now;
     time(&now);
     localtime_r(&now, timeinfo);
-    // Retorna false se o tempo do RTC ainda não tiver sido ajustado
+    // Return false if the year is less than 2016 (indicating that the time has not been set)
     return (timeinfo->tm_year > (2016 - 1900));
 }
 
@@ -113,7 +124,7 @@ void rtc_manager_process_schedules_and_sleep(void) {
 
     int min_future_minutes = 24 * 60 + 1;
 
-    // --- 1. Varre os agendamentos da NVS ---
+    // --- 1. Checks the schedules from NVS ---
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         schedule_t sched;
         if (explorer_memory_load_schedule((uint8_t)i, &sched)) {
@@ -125,7 +136,7 @@ void rtc_manager_process_schedules_and_sleep(void) {
                 sscanf(sched.time, "%d:%d", &sh, &sm);
                 int sched_minutes = (sh * 60) + sm;
 
-                // Agendamento já passou hoje?
+                // Already has passed today?
                 if (sched_minutes <= current_minutes) {
                     if (sched_minutes > max_passed_minutes) {
                         max_passed_minutes = sched_minutes;
@@ -133,7 +144,7 @@ void rtc_manager_process_schedules_and_sleep(void) {
                         best_past_sched = sched;
                     }
                 } 
-                // Agendamento ainda vai acontecer hoje?
+                // Schedule still has time left today?
                 else {
                     if (sched_minutes < min_future_minutes) {
                         min_future_minutes = sched_minutes;
@@ -143,20 +154,20 @@ void rtc_manager_process_schedules_and_sleep(void) {
         }
     }
 
-    // --- 2. Executa o último agendamento que já venceu ---
+    // --- 2. Executes the last schedule that has already passed ---
     if (best_past_id != -1) {
         ESP_LOGI(TAG, "Executando agendamento pendente ID %d", best_past_id);
         execute_schedule_action(&best_past_sched);
     }
 
-    // --- 3. Cálculo do Deep Sleep ---
+    // --- 3. Calculates the deep sleep duration ---
     uint64_t sleep_seconds = 0;
 
     if (min_future_minutes <= 24 * 60) {
-        // Acorda exatamente no minuto do próximo agendamento (no segundo 00)
+        // Wake up at the exact minute of the next schedule (at second 00)
         sleep_seconds = (min_future_minutes - current_minutes) * 60 - now_tm.tm_sec;
         
-        // Margem de segurança: se o tempo de sono for menor que 5 segundos, dorme pelo menos até o próximo evento
+        // Security margin: if the sleep time is less than 5 seconds, sleep at least until the next event
         if (sleep_seconds < 5) {
             sleep_seconds = 5;
         }
@@ -164,15 +175,15 @@ void rtc_manager_process_schedules_and_sleep(void) {
         ESP_LOGI(TAG, "Próximo alarme hoje às %02d:%02d (Sleep: %llu sec)",
                 min_future_minutes / 60, min_future_minutes % 60, sleep_seconds);
     } else {
-        // NÃO EXISTE mais alarme hoje (Dia "Vazio" ou sem alarmes futuros)
+        // THERE are no more alarms today (Empty day or no future alarms)
         int minutes_to_midnight = (24 * 60) - current_minutes;
 
         if (minutes_to_midnight <= 120) {
-            // Faltam 2 horas ou menos para 00:00 -> Dorme até 00:01 do dia seguinte
+            // 2 hours or less until midnight -> Sleep until 00:01 the next day
             sleep_seconds = (minutes_to_midnight + 1) * 60 - now_tm.tm_sec;
             ESP_LOGI(TAG, "Faltam <= 2h para meia-noite. Dormindo até 00:01 do próximo dia (%llu sec)", sleep_seconds);
         } else {
-            // Faltam mais de 2 horas para 00:00 -> Acorda a cada 3 horas (10800 seg)
+            // More than 2 hours remaining until midnight -> Wakes up every 3 hours (10,800 sec)
             sleep_seconds = 3 * 3600;
             ESP_LOGI(TAG, "Sem agendamentos próximos. Acordando em 3 horas (%llu sec)", sleep_seconds);
         }

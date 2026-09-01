@@ -1,3 +1,14 @@
+/**
+ * @file explorer_memory.c
+ * @author Filipe Mesel Lobo Costa Cardoso
+ * @brief Implementation of memory management functions for the Explorer IR Blaster project, including saving and loading IR commands, WiFi credentials, and schedules.
+ * @version 0.1
+ * @date 2026-08-31
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #include "explorer_memory.h"
 #include "esp_log.h"
 #include "config.h"
