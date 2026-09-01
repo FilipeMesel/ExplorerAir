@@ -157,6 +157,15 @@ void display_show_text(const char *str) {
     if (line_len * 8 < 128) {
         x = (128 - (line_len * 8)) / 2;
     }
+    if (line_len * 8 < 128) {
+        x = (128 - (line_len * 8)) / 2;
+    }
+
+    while (*str) {
+        // Trata a quebra de linha \n
+        if (*str == '\n') {
+            page += 2; // Pula 2 páginas (16 pixels) para a linha de baixo
+            if (page > 6) break; // Evita estourar o limite inferior do display
 
     while (*str) {
         // Interpret newline characters to move to the next line

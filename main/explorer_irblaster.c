@@ -276,7 +276,8 @@ static void run_ir_learning_routine(void) {
             while (gpio_get_level(BUTTON_2_GPIO) != 0) vTaskDelay(pdMS_TO_TICKS(50));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // Checa a transição do tempo a cada 1 segundo
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     display_show_text("APRENDIZADO\nCONCLUIDO!");

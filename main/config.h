@@ -71,4 +71,11 @@ static const wifi_fallback_net_t WIFI_FALLBACK_NETWORKS[] = {
 // --- SCHEDULE SETTINGS ---
 #define MAX_SCHEDULES 10                        /**Maximum number of schedules */
 
+// --- CONFIGURAÇÕES DE TEMPO ---
+#define MQTT_INTERACTIVITY_TIMEOUT       30 // Tempo em segundos para considerar o MQTT inativo e encerrar a task de interação
+#define MQTT_TX_QUEUE_SEND_TIMOUT_TICKS  100 // Timeout para envio de mensagens na fila MQTT TX
+
+// --- CONFIGURAÇÕES DE SCHEDULE ---
+#define MAX_SCHEDULES 10
+
 #endif // CONFIG_H
