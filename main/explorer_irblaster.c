@@ -694,12 +694,16 @@ void app_main(void)
         } else {
             // If the MQTT connection fails, display an error message and go to sleep
             ESP_LOGE(TAG, "Erro na conexão MQTT!");
-            display_show_text("ERRO");
+            display_show_text("ERRO WIFI");
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            display_clear();
             rtc_manager_process_schedules_and_sleep();
         }
     } else {
         ESP_LOGE(TAG, "Exibindo ERRO WIFI no display...");
         display_show_text("ERRO WIFI");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        display_clear();
         rtc_manager_process_schedules_and_sleep();
     }
 

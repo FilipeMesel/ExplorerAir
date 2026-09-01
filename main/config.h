@@ -29,8 +29,17 @@
 #define IR_SEND_PIN          GPIO_NUM_4     /**IR Send Pin */
 
 // --- NETWORK SETTINGS ---
-#define WIFI_FALLBACK_SSID    "conectaSenFio"   /**WiFi Fallback SSID */
-#define WIFI_FALLBACK_PASS    "123456789"       /**WiFi Fallback Password */
+typedef struct {
+    const char *ssid;
+    const char *pass;
+} wifi_fallback_net_t;
+
+static const wifi_fallback_net_t WIFI_FALLBACK_NETWORKS[] = {
+    { "conectaSenFio",  "123456789" },
+    { "conectaSenfio2", "123456789" }
+};
+
+#define NUM_FALLBACK_NETWORKS (sizeof(WIFI_FALLBACK_NETWORKS) / sizeof(WIFI_FALLBACK_NETWORKS[0]))
 
 // --- NVS KEYS ---
 #define NVS_WIFI_NAMESPACE      "wifi_cfg"      /**WiFi Configuration Namespace */

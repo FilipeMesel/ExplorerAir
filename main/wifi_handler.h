@@ -27,8 +27,8 @@ typedef void (*wifi_status_cb_t)(const char *title, const char *subtitle);
 /**
  * @brief Initializes the Wi-Fi connection process with a callback for status updates.
  * The function attempts to connect to Wi-Fi networks in the following order:
- *        - 3 Times with the client's network (saved in NVS)
- *        - 3 Times on the Fallback network ("conectaSenFio")
+ *        - 3 Times with the client's network (saved in NVS, if available)
+ *        - 3 Times on each of the N Fallback networks defined in config.h
  * 
  * @param cb Callback for status updates to refresh the OLED display in real-time.
  */
