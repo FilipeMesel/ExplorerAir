@@ -134,7 +134,7 @@ void wifi_connect_init(wifi_status_cb_t cb) {
     char client_pass[64] = {0};
     bool has_client_credentials = wifi_load_credentials(client_ssid, client_pass);
 
-    // 1. Try 3 times on the Client Network (if there are saved credentials)
+    // 1. Try 3 times on the client's network (if credentials are saved)
     if (has_client_credentials && strlen(client_ssid) > 0) {
         if (try_connect_network(client_ssid, client_pass, "WIFI CLIENTE")) {
             return;
@@ -143,12 +143,17 @@ void wifi_connect_init(wifi_status_cb_t cb) {
         ESP_LOGW(TAG, "Sem credenciais do cliente presas na NVS. Pulando para Fallback...");
     }
 
-    // 2. Try 3 times on the Fallback Network (conectaSenFio)
-    if (try_connect_network(WIFI_FALLBACK_SSID, WIFI_FALLBACK_PASS, "WIFI FALLBACK")) {
-        return;
+    // 2. Try 3 times on each of the N fallback networks defined in config.h
+    for (size_t i = 0; i < NUM_FALLBACK_NETWORKS; i++) {
+        char label_buf[32];
+        snprintf(label_buf, sizeof(label_buf), "FALLBACK %u", (unsigned int)(i + 1));
+
+        if (try_connect_network(WIFI_FALLBACK_NETWORKS[i].ssid, WIFI_FALLBACK_NETWORKS[i].pass, label_buf)) {
+            return;
+        }
     }
 
-    // If fail 3 times on the main + 3 times on the fallback
+    // I fail the connection and set the failure status
     s_is_failed = true;
     s_is_connected = false;
     ESP_LOGE(TAG, "Todas as tentativas de Wi-Fi falharam.");
