@@ -1,2 +1,17 @@
 prompts/
+# ESP-IDF / CMake Build output
 build/
+sdkconfig.old
+sdkconfig.ci
+
+# Python / Virtual Environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
