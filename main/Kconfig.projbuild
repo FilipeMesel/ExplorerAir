@@ -1,0 +1,10 @@
+menu "Explorer IRBlaster Test Configuration"
+
+    config ENABLE_FRAM_TESTS
+        bool "Enable MB85RS512T FRAM Unit/Integration Tests"
+        default n
+        help
+            Ativa a execução dos testes automatizados de leitura, escrita,
+            status register e validação dos offsets da memória FRAM durante o boot na main.c.
+
+endmenu
