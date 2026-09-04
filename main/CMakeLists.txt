@@ -1,3 +1,3 @@
 idf_component_register(SRCS "main.c"
     INCLUDE_DIRS "."
-    REQUIRES board_spi_bus fram_mb85rs512t)
+    REQUIRES board_spi_bus board_i2c_bus fram_mb85rs512t display_oled)

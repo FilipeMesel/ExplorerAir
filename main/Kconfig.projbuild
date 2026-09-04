@@ -7,4 +7,15 @@ menu "Explorer IRBlaster Test Configuration"
             Ativa a execução dos testes automatizados de leitura, escrita,
             status register e validação dos offsets da memória FRAM durante o boot na main.c.
 
+    config OLED_I2C_ADDRESS
+            hex "OLED I2C Address"
+            default 0x3C
+            help
+                I2C slave address for SSD1306/SH1106 OLED display (typically 0x3C or 0x3D).
+
+        config OLED_RUN_TESTS
+            bool "Enable OLED Component Hardware Tests"
+            default n
+            help
+                Enables standalone test suite execution for the OLED display inside app_main().
 endmenu

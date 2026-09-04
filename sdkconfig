@@ -647,7 +647,10 @@ CONFIG_PARTITION_TABLE_MD5=y
 #
 # Explorer IRBlaster Test Configuration
 #
-CONFIG_ENABLE_FRAM_TESTS=y
+# CONFIG_ENABLE_FRAM_TESTS is not set
+# default:
+CONFIG_OLED_I2C_ADDRESS=0x3C
+CONFIG_OLED_RUN_TESTS=y
 # end of Explorer IRBlaster Test Configuration
 
 #

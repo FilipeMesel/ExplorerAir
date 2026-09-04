@@ -4,7 +4,11 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+
 #include "fram_mb85rs512t.h"
+
+#include "board_i2c_bus.h"
+#include "display_oled.h"
 
 static const char *TAG = "MAIN_APP";
 
@@ -15,6 +19,16 @@ void app_main(void) {
     // Initialize the FRAM device
     //-------------------------------------
     ESP_ERROR_CHECK(fram_init());
+
+    //-----------------------------------
+    // Initialize the I2C bus for the OLED display and RTC
+    //-----------------------------------
+    ESP_ERROR_CHECK(board_i2c_bus_init());
+
+    //-----------------------------------
+    // Initialize the OLED display with default I2C address
+    //-----------------------------------
+    ESP_ERROR_CHECK(oled_init(OLED_I2C_ADDR_DEFAULT));
 
 #if CONFIG_ENABLE_FRAM_TESTS
     ESP_LOGI(TAG, "=================================================");
@@ -62,6 +76,11 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "=================================================");
 #endif
+
+#if CONFIG_OLED_RUN_TESTS
+    oled_run_tests();
+#endif
+
     while (1) {
         
         ESP_LOGI(TAG, "Hello, World!");
