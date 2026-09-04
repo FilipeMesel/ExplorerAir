@@ -645,6 +645,12 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Explorer IRBlaster Test Configuration
+#
+CONFIG_ENABLE_FRAM_TESTS=y
+# end of Explorer IRBlaster Test Configuration
+
+#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
