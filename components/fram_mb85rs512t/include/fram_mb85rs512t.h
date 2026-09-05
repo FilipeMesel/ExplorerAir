@@ -102,6 +102,13 @@ esp_err_t fram_write_telemetry_ring(uint16_t relative_offset, const uint8_t *dat
  */
 esp_err_t fram_read_telemetry_ring(uint16_t relative_offset, uint8_t *data, size_t len);
 
+/**
+ * @brief Executes self-diagnostic unit tests for the FRAM component.
+ * 
+ * @return esp_err_t ESP_OK if all tests pass, ESP_FAIL otherwise.
+ */
+esp_err_t fram_run_tests(void);
+
 #ifdef __cplusplus
 }
 #endif
