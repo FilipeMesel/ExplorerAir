@@ -62,6 +62,9 @@ explorerAirConditioner/
 │   ├── fram_mb85rs512t/      # MB85RS512T SPI FRAM Manager (Memory offsets & Ring Buffer)
 │   ├── ir_remote/            # RMT Transceiver for RAW Infrared waveforms
 │   ├── display_oled/         # OLED Display Controller & Português UI Menu Flow
+│   ├── board_wifi/           # Wi-Fi Manager with Primary/Fallback Network Failover Engine
+│   ├── board_mqtt/           # Dynamic MAC-based MQTT Client Wrapper & Event-Driven Engine
+│   ├── json_protocol/        # cJSON Encoders & Parsers for MQTT Uplink/Downlink Payload
 │   └── app_telemetry/        # Business Logic Engine (Tasks 0 to 3, Schedule Evaluator)
 └── main/
     └── main.c                # System Entry Point & Task Scheduler
@@ -279,6 +282,7 @@ idf.py set-target esp32
 
 ```bash
 idf.py add-dependency "espressif/mqtt"
+idf.py add-dependency "espressif/cjson^1.7.18"
 ```
 
 4. Build the Project:

@@ -7,6 +7,7 @@
 #include "sdkconfig.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "cJSON.h"
 
 #include "fram_mb85rs512t.h"
 
@@ -16,6 +17,8 @@
 
 #include "board_wifi.h"
 #include "board_mqtt.h"
+
+#include "json_protocol.h"
 
 static const char *TAG = "MAIN_APP";
 
@@ -31,7 +34,14 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
     } else if (event_base == BOARD_MQTT_EVENTS) {
         if (event_id == BOARD_MQTT_EVENT_CONNECTED) {
             ESP_LOGI(TAG, "MQTT OK. Enviando Telemetria (CMD 0)...");
-            board_mqtt_publish_uplink("{\"cmd_id\":0,\"temp\":24,\"umid\":60,\"rtc\":\"10:00\",\"RSSI\":\"-10\",\"bat\":3.7,\"last_action\":0}", 1);
+            char *json_payload = build_telemetry_json(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
+            if (json_payload != NULL) {
+                board_mqtt_publish_uplink(json_payload, 1);
+                free(json_payload);
+            }
+            else{
+                ESP_LOGE(TAG, "Falha ao gerar JSON de telemetria!");
+            }
         } else if (event_id == BOARD_MQTT_EVENT_DATA_RECEIVED) {
             board_mqtt_data_t *msg = (board_mqtt_data_t *)event_data;
             ESP_LOGI(TAG, "Comando MQTT recebido: %s", msg->payload);
@@ -99,7 +109,7 @@ void app_main(void) {
     // Set dynamic Wi-Fi credentials and start failover connection
     //-----------------------------------------------
     // TODO: In a real application, these credentials would be read from FRAM.
-    wifi_credential_t dynamic_cred = {.ssid = "SEUWIFI", .password = "123456789"};
+    wifi_credential_t dynamic_cred = {.ssid = "SEU-WIFI", .password = "123456789"};
     board_wifi_set_dynamic_credential(&dynamic_cred);
 
     board_wifi_start_failover_connect();
