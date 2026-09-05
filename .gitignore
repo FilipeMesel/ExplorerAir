@@ -15,3 +15,8 @@ __pycache__/
 .idea/
 *.swp
 *.swo
+
+# ESP Component Manager
+dependencies.lock
+main/idf_component.yml
+managed_components/
