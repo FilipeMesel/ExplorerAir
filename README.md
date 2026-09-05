@@ -275,13 +275,19 @@ cd ExplorerAir
 idf.py set-target esp32
 ```
 
-3. Build the Project:
+3. Add dependency:
+
+```bash
+idf.py add-dependency "espressif/mqtt"
+```
+
+4. Build the Project:
 
 ```bash
 idf.py build
 ```
 
-4. Flash de Project
+5. Flash de Project
 
 ```bash
 idf.py -p <PORT> flash monitor
