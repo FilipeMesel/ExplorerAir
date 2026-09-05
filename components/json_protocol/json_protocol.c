@@ -33,12 +33,14 @@ esp_err_t json_encode_telemetry(const telemetry_data_t *data, char **out_str) {
     const char *rtc_val = (data->rtc_time[0] != '\0') ? data->rtc_time : "00:00";
     const char *rssi_val = (data->rssi[0] != '\0') ? data->rssi : "0";
 
+    double bat_rounded = (int)(data->battery_voltage * 100.0f + (data->battery_voltage >= 0 ? 0.5f : -0.5f)) / 100.0;
+
     cJSON_AddNumberToObject(root, "cmd_id", 0);
     cJSON_AddNumberToObject(root, "temp", data->temperature);
     cJSON_AddNumberToObject(root, "umid", data->humidity);
     cJSON_AddStringToObject(root, "rtc", rtc_val);
     cJSON_AddStringToObject(root, "RSSI", rssi_val);
-    cJSON_AddNumberToObject(root, "bat", data->battery_voltage);
+    cJSON_AddNumberToObject(root, "bat", bat_rounded);
     cJSON_AddNumberToObject(root, "last_action", (int)action);
 
     *out_str = cJSON_PrintUnformatted(root);
