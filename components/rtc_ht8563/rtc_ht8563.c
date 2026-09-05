@@ -125,7 +125,7 @@ esp_err_t rtc_ht8563_get_time(rtc_date_time_t *dt) {
 
 esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute) {
     uint8_t min_bcd = rtc_dec_to_bcd(minute) & 0x7F;
-    uint8_t hour_bcd = rtc_dec_to_bcd(hour) & 0x7F;
+    uint8_t hour_bcd = rtc_dec_to_bcd(hour) & 0x3F;
 
     rtc_ht8563_write_reg(REG_MIN_ALARM, min_bcd);
     rtc_ht8563_write_reg(REG_HOUR_ALARM, hour_bcd);
@@ -139,17 +139,17 @@ esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute) {
 esp_err_t rtc_ht8563_set_timer(uint8_t seconds) {
     uint8_t ctrl2 = 0;
 
-    // 1. Desabilita o timer para configuração
+    // 1. Disable the timer for configuration
     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x00);
 
-    // 2. Carregamos o valor de contagem regressiva
+    // 2. Load the value for the countdown timer
     rtc_ht8563_write_reg(REG_TIMER_VAL, seconds);
 
-    // 3. Ativa o Timer (Bit 7 TE = 1) e configura a base de tempo para 1 Hz (Bits 1:0 = 10)
-    // Bit 3 (TI/TP = 0): Gera sinal de nível mantido no pino /INT até ser limpo via software
+    // 3. Enable the Timer (Bit 7 TE = 1) and configure the time base to 1 Hz (Bits 1:0 = 10)
+    // Bit 3 (TI/TP = 0): Generates a maintained level signal on the /INT pin until cleared via software
     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x82);
 
-    // 4. No CTRL2: Habilita Interrupção por Timer (TIE - Bit 0) e Limpa Flag (TF - Bit 2)
+    // 4. No CTRL2: Enable the Timer Interrupt (TIE - Bit 0) and Clear Flag (TF - Bit 2)
     rtc_ht8563_read_reg(REG_CTRL2, &ctrl2);
     ctrl2 &= ~(1 << 2); // Zera bit TF (Timer Flag)
     ctrl2 |= (1 << 0);  // Seta bit TIE (Timer Interrupt Enable)
@@ -159,8 +159,7 @@ esp_err_t rtc_ht8563_set_timer(uint8_t seconds) {
     return ESP_OK;
 }
 
-/* Realização dos 3 Testes Requisitados */
-
+/* Tests */
 void rtc_ht8563_run_test_log_datetime(void) {
     rtc_date_time_t dt;
     if (rtc_ht8563_get_time(&dt) == ESP_OK) {
@@ -207,7 +206,7 @@ void rtc_ht8563_run_configured_tests(void) {
         uint8_t alarm_hour = (alarm_min == 0) ? (dt_alarm.hour + 1) % 24 : dt_alarm.hour;
         
         rtc_ht8563_set_alarm(alarm_hour, alarm_min);
-        ESP_LOGI(TAG, "Alarme de teste agendado para %02d:%02d", alarm_hour, alarm_min);
+        ESP_LOGI(TAG, "Alarme de teste agendado para %02d:%02d:00", alarm_hour, alarm_min);
     }
 #endif
 

@@ -1,3 +1,8 @@
+/**
+ * @file rtc_ht8563.h
+ * @brief Interface for the HT8563 RTC driver.
+ */
+
 #ifndef RTC_HT8563_H
 #define RTC_HT8563_H
 
@@ -18,20 +23,20 @@ typedef struct {
 } rtc_date_time_t;
 
 /**
- * @brief Inicializa o driver do RTC associando-o ao barramento I2C compartilhado.
+ * @brief Initialize the RTC driver creating an instance of I2C bus.
  */
 esp_err_t rtc_ht8563_init(void);
 
 esp_err_t rtc_ht8563_deinit(void);
 
 /**
- * @brief Leitura e escrita direta nos registradores (US 5.1)
+ * @brief Read and Write to RTC registers
  */
 esp_err_t rtc_ht8563_read_reg(uint8_t reg, uint8_t *data);
 esp_err_t rtc_ht8563_write_reg(uint8_t reg, uint8_t data);
 
 /**
- * @brief Funções de conversão BCD e Controle de Data/Hora (US 5.2)
+ * @brief Functions to convert BCD and control date/time
  */
 uint8_t rtc_dec_to_bcd(uint8_t val);
 uint8_t rtc_bcd_to_dec(uint8_t val);
@@ -39,22 +44,23 @@ esp_err_t rtc_ht8563_set_time(const rtc_date_time_t *dt);
 esp_err_t rtc_ht8563_get_time(rtc_date_time_t *dt);
 
 /**
- * @brief Alarme, Timer e Limpeza das Flags AF/TF (US 5.3)
+ * @brief Alarme, Timer and Clear Flags AF/TF
  */
 esp_err_t rtc_ht8563_clear_flags(void);
 esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute);
 esp_err_t rtc_ht8563_set_timer(uint8_t seconds);
 
 /**
- * @brief Bateria de Testes (US 5.4)
+ * @brief Tests for the RTC functionality. These functions can be called from app_main or other parts of the application.
+ *        They are intended for testing and demonstration purposes.
  */
 void rtc_ht8563_run_test_log_datetime(void);
 void rtc_ht8563_run_test_alarm(uint8_t hour, uint8_t minute);
 void rtc_ht8563_run_test_timer(uint8_t seconds);
 
 /**
- * @brief Executa os testes do RTC habilitados via Kconfig.
- *        Pode ser chamada diretamente na app_main.
+ * @brief Executes the RTC tests enabled via Kconfig.
+ *        Can be called directly from app_main.
  */
 void rtc_ht8563_run_configured_tests(void);
 
