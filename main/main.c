@@ -9,6 +9,7 @@
 
 #include "board_i2c_bus.h"
 #include "display_oled.h"
+#include "rtc_ht8563.h"
 
 static const char *TAG = "MAIN_APP";
 
@@ -24,6 +25,11 @@ void app_main(void) {
     // Initialize the I2C bus for the OLED display and RTC
     //-----------------------------------
     ESP_ERROR_CHECK(board_i2c_bus_init());
+
+    //-----------------------------------
+    // Initialize the RTC device
+    //-----------------------------------
+    ESP_ERROR_CHECK(rtc_ht8563_init());
 
     //-----------------------------------
     // Initialize the OLED display with default I2C address
@@ -79,6 +85,23 @@ void app_main(void) {
 
 #if CONFIG_OLED_RUN_TESTS
     oled_run_tests();
+#endif
+
+#if RTC_HT8563_TEST_READ_DATETIME
+    rtc_ht8563_run_configured_tests();
+#endif
+
+#if CONFIG_RTC_HT8563_TEST_ALARM_INT || CONFIG_RTC_HT8563_TEST_TIMER_INT
+    rtc_ht8563_run_configured_tests();
+    ESP_LOGI(TAG, "Aguardando desligamento...");
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // 1. Remove os dispositivos do barramento
+    rtc_ht8563_deinit();
+    oled_deinit();
+
+    // 2. Agora sim encerra o barramento I2C com segurança
+    board_i2c_bus_deinit();
 #endif
 
     while (1) {

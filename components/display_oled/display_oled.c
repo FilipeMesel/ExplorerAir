@@ -266,6 +266,18 @@ esp_err_t oled_init(uint8_t i2c_addr) {
     return oled_clear();
 }
 
+esp_err_t oled_deinit(void) {
+    if (s_oled_dev_handle != NULL) {
+        esp_err_t ret = i2c_master_bus_rm_device(s_oled_dev_handle);
+        if (ret == ESP_OK) {
+            s_oled_dev_handle = NULL;
+            ESP_LOGI(TAG, "Dispositivo OLED removido do barramento I2C.");
+        }
+        return ret;
+    }
+    return ESP_OK;
+}
+
 esp_err_t oled_clear(void) {
     memset(s_framebuffer, 0x00, sizeof(s_framebuffer));
     return oled_flush();

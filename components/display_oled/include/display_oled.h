@@ -64,6 +64,13 @@ typedef enum {
 esp_err_t oled_init(uint8_t i2c_addr);
 
 /**
+ * @brief Deinitialize the OLED display and remove it from the shared I2C bus.
+ * 
+ * @return esp_err_t 
+ */
+esp_err_t oled_deinit(void);
+
+/**
  * @brief Clear display frame buffer and refresh screen.
  * 
  * @return esp_err_t ESP_OK on success.

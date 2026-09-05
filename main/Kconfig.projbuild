@@ -18,4 +18,23 @@ menu "Explorer IRBlaster Test Configuration"
             default n
             help
                 Enables standalone test suite execution for the OLED display inside app_main().
+
+    config RTC_HT8563_TEST_READ_DATETIME
+        bool "Habilitar Teste 1: Leitura Continuada de Data/Hora"
+        default y
+        help
+          Lê periodicamente a data e hora do RTC e exibe no ESP_LOG.
+
+    config RTC_HT8563_TEST_ALARM_INT
+        bool "Habilitar Teste 2: Interrupção por Alarme de Hora"
+        default n
+        help
+          Lida/limpa as flags de interrupção e agenda o alarme para acionar a saída INT.
+
+    config RTC_HT8563_TEST_TIMER_INT
+        bool "Habilitar Teste 3: Interrupção por Timer Countdown"
+        default n
+        help
+          Limpa as flags e ativa o timer regressivo do RTC para gerar pulso de interrupção.
+
 endmenu
