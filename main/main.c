@@ -22,6 +22,12 @@
 
 static const char *TAG = "MAIN_APP";
 
+/**
+ * @brief Converts telemetry data to FRAM log entry format.
+ * 
+ * @param telemetry struct containing telemetry data.
+ * @param entry FRAM log entry to be populated.
+ */
 static void telemetry_to_fram_entry(const telemetry_data_t *telemetry, fram_log_entry_t *entry) {
     memset(entry, 0, sizeof(fram_log_entry_t));
     entry->temperature = (int16_t)telemetry->temperature;
@@ -37,6 +43,17 @@ static void telemetry_to_fram_entry(const telemetry_data_t *telemetry, fram_log_
     entry->last_action = (uint8_t)telemetry->last_action;
 }
 
+/**
+ * @brief Saves telemetry data to the FRAM ring buffer.
+ * 
+ * @param temp Temperature value.
+ * @param humidity Humidity value.
+ * @param rtc_time RTC time string.
+ * @param rssi RSSI string.
+ * @param bat_v Battery voltage.
+ * @param action Last action performed.
+ * @return esp_err_t ESP_OK on success, error code on failure.
+ */
 static esp_err_t save_telemetry_to_fram(int temp, int humidity, const char *rtc_time, 
                                         const char *rssi, float bat_v, last_action_t action) 
 {
@@ -49,7 +66,7 @@ static esp_err_t save_telemetry_to_fram(int temp, int humidity, const char *rtc_
     snprintf(telemetry.rtc_time, sizeof(telemetry.rtc_time), "%s", rtc_time ? rtc_time : "00:00");
     snprintf(telemetry.rssi, sizeof(telemetry.rssi), "%s", rssi ? rssi : "0");
 
-    // Prepara a struct neutra da FRAM
+    // Prepare the struct for the FRAM
     fram_log_entry_t entry;
     telemetry_to_fram_entry(&telemetry, &entry);
 
@@ -60,7 +77,12 @@ static esp_err_t save_telemetry_to_fram(int temp, int humidity, const char *rtc_
     return err;
 }
 
-// Callback do flush recebe fram_log_entry_t, converte e manda via MQTT JSON
+/**
+ * @brief Callback function for flushing log entries to MQTT.
+ * 
+ * @param entry FRAM log entry to be processed.
+ * @return esp_err_t ESP_OK on success, error code on failure.
+ */
 static esp_err_t flush_log_callback(const fram_log_entry_t *entry) {
     if (entry == NULL) return ESP_ERR_INVALID_ARG;
 
@@ -86,6 +108,14 @@ static esp_err_t flush_log_callback(const fram_log_entry_t *entry) {
     return err;
 }
 
+/**
+ * @brief System event handler for managing various system events.
+ * 
+ * @param arg Argument pointer.
+ * @param event_base Event base.
+ * @param event_id Event ID.
+ * @param event_data Event data pointer.
+ */
 static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     if (event_base == BOARD_WIFI_EVENTS) {
         if (event_id == BOARD_WIFI_EVENT_CONNECTED) {
@@ -133,7 +163,7 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
                              rtc_payload.hour, rtc_payload.minute, rtc_payload.second,
                              rtc_payload.interval_sec);
                     
-                    // TODO: Atualizar registradores de hora do RTC HT8563 e o timer de telemetria
+                    // TODO: Update the registers of the RTC HT8563 and the telemetry timer
                 } else {
                     ESP_LOGE(TAG, "Falha ao parsear payload do CMD 1 (RTC Sync)");
                 }
