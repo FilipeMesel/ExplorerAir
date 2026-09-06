@@ -32,19 +32,137 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
             //TODO: Show error on OLED and go to deep sleep
         }
     } else if (event_base == BOARD_MQTT_EVENTS) {
-        if (event_id == BOARD_MQTT_EVENT_CONNECTED) {
+        if (event_id == BOARD_MQTT_EVENT_CONNECTED)
+        {
             ESP_LOGI(TAG, "MQTT OK. Enviando Telemetria (CMD 0)...");
             char *json_payload = build_telemetry_json(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
-            if (json_payload != NULL) {
+            if (json_payload != NULL)
+            {
                 board_mqtt_publish_uplink(json_payload, 1);
                 free(json_payload);
             }
-            else{
+            else
+            {
                 ESP_LOGE(TAG, "Falha ao gerar JSON de telemetria!");
             }
-        } else if (event_id == BOARD_MQTT_EVENT_DATA_RECEIVED) {
+        }
+        else if (event_id == BOARD_MQTT_EVENT_DATA_RECEIVED)
+        {
             board_mqtt_data_t *msg = (board_mqtt_data_t *)event_data;
-            ESP_LOGI(TAG, "Comando MQTT recebido: %s", msg->payload);
+            int cmd_id = -1;
+            if (json_get_cmd_id(msg->payload, &cmd_id) != ESP_OK)
+            {
+                ESP_LOGE(TAG, "JSON recebido com formato ou cmd_id invalido");
+                return;
+            }
+
+            switch (cmd_id)
+            {
+            case CMD_ID_RTC_SYNC:
+            { // Sync RTC
+                cmd1_rtc_sync_payload_t rtc_payload;
+                if (json_decode_cmd1_rtc_sync(msg->payload, &rtc_payload) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "CMD 1 Recebido: Hora %02d:%02d:%02d | Intervalo Telemetria: %ds",
+                             rtc_payload.hour, rtc_payload.minute, rtc_payload.second,
+                             rtc_payload.interval_sec);
+                    
+                    // TODO: Atualizar registradores de hora do RTC HT8563 e o timer de telemetria
+                } else {
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 1 (RTC Sync)");
+                }
+                break;
+            }
+            case CMD_ID_WIFI_PROV:
+            { // Wi-Fi provisioning
+                cmd3_wifi_prov_payload_t wifi_payload;
+                if (json_decode_cmd3_wifi_prov(msg->payload, &wifi_payload) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "CMD 3 Recebido: Novas credenciais Wi-Fi -> SSID: %s", wifi_payload.ssid);
+                    
+                    // TODO: Store it in FRAM
+
+                    // Publish the ACK Wi-Fi (CMD 4)
+                    wifi_ack_payload_t wifi_ack = {
+                        .ssid = wifi_payload.ssid,
+                        .password = wifi_payload.password
+                    };
+
+                    char *ack_json = NULL;
+                    if (json_encode_wifi_ack(&wifi_ack, &ack_json) == ESP_OK && ack_json != NULL) {
+                        board_mqtt_publish_uplink(ack_json, 1);
+                        free(ack_json);
+                    } else {
+                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 4) de Wi-Fi!");
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 3 (Wi-Fi Prov)");
+                }
+                break;
+            }
+            case CMD_ID_SCHEDULE_PROV:
+            { // Schedule provisioning
+                cmd5_schedule_payload_t sched_payload;
+                if (json_decode_cmd5_schedule(msg->payload, &sched_payload) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "CMD 5 Recebido: %d agendamentos parseados com sucesso", sched_payload.count);
+                    
+                    // TODO: Add it in the Ring buffer from FRAM
+
+                    // Send the ACK (CMD 6) for each schedule received in the array
+                    for (int i = 0; i < sched_payload.count; i++) {
+                        schedule_ack_payload_t sched_ack = {
+                            .week_days = sched_payload.items[i].week_days,
+                            .time = sched_payload.items[i].time,
+                            .action = sched_payload.items[i].action,
+                            .status = "OK"
+                        };
+
+                        char *ack_json = NULL;
+                        if (json_encode_schedule_ack(&sched_ack, &ack_json) == ESP_OK && ack_json != NULL) {
+                            board_mqtt_publish_uplink(ack_json, 1);
+                            free(ack_json);
+                        } else {
+                            ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 6) para o item %d!", i);
+                        }
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 5 (Schedule Prov)");
+                }
+                break;
+            }
+            case CMD_ID_SET_IR_RAW_DATA:
+            { // CMD 7: Set IR Raw Data
+                cmd7_ir_raw_payload_t ir_payload;
+                if (json_decode_cmd7_ir_raw(msg->payload, &ir_payload) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "CMD 7 Recebido: Frequencia %u Hz | Timings recebidos: %u",
+                             ir_payload.frequency_hz, ir_payload.timings_count);
+
+                    // TODO: Save the IR raw data in FRAM and send the ACK (CMD 8) with the count of valid timings received
+                    
+                    // Send the ACK CMD 8 (ACK)
+                    cmd8_ir_raw_ack_payload_t ack = {
+                        .status = "OK",
+                        .count_received = ir_payload.timings_count
+                    };
+                    
+                    char *ack_json = NULL;
+                    if (json_encode_ir_raw_ack(&ack, &ack_json) == ESP_OK && ack_json != NULL) {
+                        board_mqtt_publish_uplink(ack_json, 1);
+                        free(ack_json);
+                    } else {
+                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 8) de IR Raw!");
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 7 (IR Raw)");
+                }
+                break;
+            }
+            default:
+                ESP_LOGW(TAG, "Comando Downlink nao reconhecido: CMD %d", cmd_id);
+                break;
+            }
         }
     }
 }
@@ -109,7 +227,7 @@ void app_main(void) {
     // Set dynamic Wi-Fi credentials and start failover connection
     //-----------------------------------------------
     // TODO: In a real application, these credentials would be read from FRAM.
-    wifi_credential_t dynamic_cred = {.ssid = "SEU-WIFI", .password = "123456789"};
+    wifi_credential_t dynamic_cred = {.ssid = "SEU WIFI", .password = "SUA SENHA"};
     board_wifi_set_dynamic_credential(&dynamic_cred);
 
     board_wifi_start_failover_connect();

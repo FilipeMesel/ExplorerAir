@@ -147,3 +147,216 @@ char* build_telemetry_json(int temperature,
 
     return json_payload;
 }
+
+esp_err_t json_get_cmd_id(const char *json_str, int *cmd_id) {
+    if (json_str == NULL || cmd_id == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Falha no parse do JSON");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "cmd_id");
+    if (!cJSON_IsNumber(item)) {
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *cmd_id = item->valueint;
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_decode_cmd1_rtc_sync(const char *json_str, cmd1_rtc_sync_payload_t *payload) {
+    if (json_str == NULL || payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(payload, 0, sizeof(cmd1_rtc_sync_payload_t));
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "CMD 1: JSON invalido");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *interval = cJSON_GetObjectItemCaseSensitive(root, "telemetry_update");
+    cJSON *actual_time = cJSON_GetObjectItemCaseSensitive(root, "actual_time");
+
+    if (!cJSON_IsNumber(interval) || !cJSON_IsString(actual_time) || (actual_time->valuestring == NULL)) {
+        ESP_LOGE(TAG, "CMD 1: Campos 'telemetry_update' ou 'actual_time' ausentes/invalidos");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    payload->interval_sec = (uint16_t)interval->valueint;
+
+    // Formated String parse "HH:MM:SS"
+    int hour = 0, minute = 0, second = 0;
+    if (sscanf(actual_time->valuestring, "%d:%d:%d", &hour, &minute, &second) != 3) {
+        ESP_LOGE(TAG, "CMD 1: Formato invalido para actual_time ('%s'). Esperado 'HH:MM:SS'", actual_time->valuestring);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    payload->hour = (uint8_t)hour;
+    payload->minute = (uint8_t)minute;
+    payload->second = (uint8_t)second;
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_decode_cmd3_wifi_prov(const char *json_str, cmd3_wifi_prov_payload_t *payload) {
+    if (json_str == NULL || payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "CMD 3: JSON invalido");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *ssid = cJSON_GetObjectItemCaseSensitive(root, "ssid");
+    cJSON *pass = cJSON_GetObjectItemCaseSensitive(root, "password");
+
+    if (!cJSON_IsString(ssid) || (ssid->valuestring == NULL) ||
+        !cJSON_IsString(pass) || (pass->valuestring == NULL)) {
+        ESP_LOGE(TAG, "CMD 3: Estrutura de ssid/password invalida");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Security copy to avoid buffer overflow
+    snprintf(payload->ssid, sizeof(payload->ssid), "%s", ssid->valuestring);
+    snprintf(payload->password, sizeof(payload->password), "%s", pass->valuestring);
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_decode_cmd5_schedule(const char *json_str, cmd5_schedule_payload_t *payload) {
+    if (json_str == NULL || payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(payload, 0, sizeof(cmd5_schedule_payload_t));
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "CMD 5: JSON invalido");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *idx = cJSON_GetObjectItemCaseSensitive(root, "schedule_id");
+    cJSON *wd = cJSON_GetObjectItemCaseSensitive(root, "week_days");
+    cJSON *tm = cJSON_GetObjectItemCaseSensitive(root, "time");
+    cJSON *act = cJSON_GetObjectItemCaseSensitive(root, "action");
+
+    if (!cJSON_IsNumber(idx) || !cJSON_IsNumber(wd) || 
+        !cJSON_IsString(tm)  || (tm->valuestring == NULL) ||
+        !cJSON_IsString(act) || (act->valuestring == NULL)) {
+        ESP_LOGE(TAG, "CMD 5: Campos obrigatorios ausentes ou invalidos");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Validate schedule_id range (0 to 10)
+    if (idx->valueint < 0 || idx->valueint >= MAX_SCHEDULES) {
+        ESP_LOGE(TAG, "CMD 5: schedule_id fora dos limites (0-10): %d", idx->valueint);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    schedule_item_t *sch = &payload->items[0];
+    sch->index = (uint8_t)idx->valueint;
+    sch->week_days = (uint8_t)wd->valueint; //e.g. 62 -> 0b00111110
+    snprintf(sch->time, sizeof(sch->time), "%s", tm->valuestring);
+    snprintf(sch->action, sizeof(sch->action), "%s", act->valuestring);
+
+    payload->count = 1;
+    cJSON_Delete(root);
+
+    return ESP_OK;
+}
+
+// ----------------------------------------------------------------------------
+// CMD 7 Parser - Set IR Raw Data
+// ----------------------------------------------------------------------------
+esp_err_t json_decode_cmd7_ir_raw(const char *json_str, cmd7_ir_raw_payload_t *payload) {
+    if (json_str == NULL || payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(payload, 0, sizeof(cmd7_ir_raw_payload_t));
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "CMD 7: JSON invalido");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *freq = cJSON_GetObjectItemCaseSensitive(root, "frequency");
+    cJSON *timings = cJSON_GetObjectItemCaseSensitive(root, "timings");
+
+    if (!cJSON_IsNumber(freq) || !cJSON_IsArray(timings)) {
+        ESP_LOGE(TAG, "CMD 7: Campos 'frequency' ou 'timings' ausentes/invalidos");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    payload->frequency_hz = (uint16_t)freq->valueint;
+
+    uint16_t count = 0;
+    cJSON *item = NULL;
+
+    cJSON_ArrayForEach(item, timings) {
+        if (count >= MAX_IR_RAW_TIMINGS) {
+            ESP_LOGW(TAG, "CMD 7: Limite de %d timings excedido, ignorando restantes", MAX_IR_RAW_TIMINGS);
+            break;
+        }
+
+        if (cJSON_IsNumber(item)) {
+            payload->timings[count++] = (uint16_t)item->valueint;
+        }
+    }
+
+    payload->timings_count = count;
+    cJSON_Delete(root);
+
+    return (count > 0) ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+// ----------------------------------------------------------------------------
+// CMD 8 Encoder - Set IR Raw Data ACK
+// ----------------------------------------------------------------------------
+esp_err_t json_encode_ir_raw_ack(const cmd8_ir_raw_ack_payload_t *ack, char **out_str) {
+    if (ack == NULL || out_str == NULL) {
+        ESP_LOGE(TAG, "Invalid argument: NULL pointer provided");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate cJSON root object");
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_SET_IR_RAW_DATA_ACK);
+    cJSON_AddStringToObject(root, "status", ack->status ? ack->status : "OK");
+    cJSON_AddNumberToObject(root, "count_received", ack->count_received);
+
+    *out_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (*out_str == NULL) {
+        ESP_LOGE(TAG, "Failed to render JSON string");
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
