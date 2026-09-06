@@ -64,10 +64,9 @@ explorerAirConditioner/
 │   ├── display_oled/         # OLED Display Controller & Português UI Menu Flow
 │   ├── board_wifi/           # Wi-Fi Manager with Primary/Fallback Network Failover Engine
 │   ├── board_mqtt/           # Dynamic MAC-based MQTT Client Wrapper & Event-Driven Engine
-│   ├── json_protocol/        # cJSON Encoders & Parsers for MQTT Uplink/Downlink Payload
-│   └── app_telemetry/        # Business Logic Engine (Tasks 0 to 3, Schedule Evaluator)
+│   └── json_protocol/        # cJSON Encoders & Parsers for MQTT Uplink/Downlink Payload
 └── main/
-    └── main.c                # System Entry Point & Task Scheduler
+    └── main.c                # Business Logic Engine (Tasks 0 to 3, Schedule Evaluator), System Entry Point & Task Scheduler
 ```
 
 ## Operational Sequence & Execution Lifecycle
@@ -139,31 +138,43 @@ Device Topics are structured dynamically using the unique Wi-Fi MAC Address:
 8 = 23°C, 
 9 = 24°C, 
 10 = 25°C.
+11 = IR Commands was learned
 
-### CMD 2 — Learned Command Queue
+### CMD 3 — Learned Command Queue
 
 ```json
-{"cmd_id": 2, "action": "25 C", "length": 68, "raw_data": [9000, 4500, 560, 560, 560, 1690]}
+{"cmd_id": 3, "action": 9, "length": 68, "raw_data": [9000, 4500, 560, 560, 560, 1690]}
 ```
+Where:
+0 = OFF, 
+1 = ON, 
+2 = 18°C, 
+3 = 19°C, 
+4 = 20°C, 
+5 = 21°C, 
+6 = 22°C, 
+7 = 23°C, 
+8 = 24°C, 
+9 = 25°C.
 
-### CMD 4 — WIFI RECEIVED ACK
+### CMD 5 — WIFI RECEIVED ACK
 Receive wifi credentials from mqtt
 
 ```json
-{"cmd_id": 4, "ssid": "{same wifi as cmd_id 3}", "password": "{same password as cmd_id 3}"}
+{"cmd_id": 5, "ssid": "{same wifi as cmd_id 3}", "password": "{same password as cmd_id 3}"}
 ```
 
-### CMD 6 — Schedule ack
+### CMD 7 — Schedule ack
 ```json
-{"cmd_id": 6, "week_days": {same as cmd_id 5}, "time": {same as cmd_id 5}, "action": {same as cmd_id 5}, "status": "OK"}
+{"cmd_id": 7, "week_days": {same as cmd_id 5}, "time": {same as cmd_id 5}, "action": {same as cmd_id 5}, "status": "OK"}
 ```
 answer to schedule (cmd_id 5)
 
-### CMD 8 — IR Raw ACK: 
+### CMD 9 — IR Raw ACK: 
 Confirms receipt and successful saving of raw IR waveforms into FRAM.
 
 ```json
-{"cmd_id":8,"status":"OK", "learned": 9}
+{"cmd_id":9,"status":"OK", "learned": 9}
 ```
 
 Where:
@@ -192,17 +203,36 @@ Where:
 ...,
 6 = Saturday.
 
-### CMD 3 — WIFI RECEIVED
+### CMD 2 — Get Learned Command Queue Transmission
+The platform request for a learned IR to store in a online database
+
+```json
+{"cmd_id": 2, "action": 9}
+```
+
+Where:
+- 0 = OFF
+- 1 = ON
+- 2 = 18
+- 3 = 19
+- 4 = 20
+- 5 = 21
+- 6 = 22
+- 7 = 23
+- 8 = 24
+- 9 = 25
+
+### CMD 4 — WIFI RECEIVED
 Receive wifi credentials from mqtt
 
 ```json
-{"cmd_id": 3, "ssid": "WIFI", "password": "PASS"}
+{"cmd_id": 4, "ssid": "WIFI", "password": "PASS"}
 ```
 
-### CMD 5 — Schedule Provisioning
+### CMD 6 — Schedule Provisioning
 
 ```json
-{"cmd_id": 5, "schedule_id": 0, "week_days": 62, "time": "08:00", "action": "SET_TEMP_18"}
+{"cmd_id": 6, "schedule_id": 0, "week_days": 62, "time": "08:00", "action": "SET_TEMP_18"}
 ```
 
 `week_days Bitmask:` Bit 0 = Enable Flag. Bits 1–7 = Sun–Sat (e.g., 62 = 0011 1110 in binary -> Enabled for Mon, Tue, Wed, Thu, Fri).
@@ -223,7 +253,7 @@ Other example: enable and Sunday -> 3 = 011
 
 ```json
 {
-  "cmd_id": 5,
+  "cmd_id": 6,
   "schedule_id": 1,
   "week_days": 3,
   "time": "08:00",
@@ -231,13 +261,13 @@ Other example: enable and Sunday -> 3 = 011
 }
 ```
 
-### CMD 7 — Set IR Raw Data:
+### CMD 8 — Set IR Raw Data:
 
 Receives raw IR pulse timings directly from the backend server to overwrite/save to FRAM for a specific action (e.g. "25 C", "ON").
 
 ```json
 {
-  "cmd_id": 7,
+  "cmd_id": 8,
   "action": 9,
   "length": 128,
   "raw_data": [4402,4377,537,1608,536,536,536,1607,536,1608,535,536,537,535,535,1609,535,537,535,536,535,1608,536,536,535,537,534,1609,536,1607,535,537,536,1608,535,1609,535,536,536,1608,535,1608,535,1607,536,1609,536,1608,535,1608,536,536,535,1608,535,538,533,537,535,537,535,536,535,537,535,536,535,1608,535,1609,535,536,534,538,533,538,535,537,535,536,535,536,535,537,535,536,535,1608,535,1608,535,1608,536,1608,535,1608,536,1608,535,5190,4375,4379,534,1609,535,536,535,1609,535,1609,534,538,534,537,534,1610,534,537,535,537,532,1610,535,537,535,536,535,1608]
