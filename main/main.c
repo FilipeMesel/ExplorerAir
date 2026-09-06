@@ -22,6 +22,70 @@
 
 static const char *TAG = "MAIN_APP";
 
+static void telemetry_to_fram_entry(const telemetry_data_t *telemetry, fram_log_entry_t *entry) {
+    memset(entry, 0, sizeof(fram_log_entry_t));
+    entry->temperature = (int16_t)telemetry->temperature;
+    entry->humidity = (int16_t)telemetry->humidity;
+    
+    int h = 0, m = 0;
+    sscanf(telemetry->rtc_time, "%d:%d", &h, &m);
+    entry->hour = (uint8_t)h;
+    entry->minute = (uint8_t)m;
+    
+    entry->rssi = (int8_t)atoi(telemetry->rssi);
+    entry->battery_mv = (uint16_t)(telemetry->battery_voltage * 1000.0f);
+    entry->last_action = (uint8_t)telemetry->last_action;
+}
+
+static esp_err_t save_telemetry_to_fram(int temp, int humidity, const char *rtc_time, 
+                                        const char *rssi, float bat_v, last_action_t action) 
+{
+    telemetry_data_t telemetry = {
+        .temperature = temp,
+        .humidity = humidity,
+        .battery_voltage = bat_v,
+        .last_action = action
+    };
+    snprintf(telemetry.rtc_time, sizeof(telemetry.rtc_time), "%s", rtc_time ? rtc_time : "00:00");
+    snprintf(telemetry.rssi, sizeof(telemetry.rssi), "%s", rssi ? rssi : "0");
+
+    // Prepara a struct neutra da FRAM
+    fram_log_entry_t entry;
+    telemetry_to_fram_entry(&telemetry, &entry);
+
+    esp_err_t err = fram_ring_push(&entry);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Telemetria salva na FRAM. Total armazenado: %u", fram_ring_get_count());
+    }
+    return err;
+}
+
+// Callback do flush recebe fram_log_entry_t, converte e manda via MQTT JSON
+static esp_err_t flush_log_callback(const fram_log_entry_t *entry) {
+    if (entry == NULL) return ESP_ERR_INVALID_ARG;
+
+    char rtc_str[8];
+    char rssi_str[8];
+    snprintf(rtc_str, sizeof(rtc_str), "%02d:%02d", entry->hour, entry->minute);
+    snprintf(rssi_str, sizeof(rssi_str), "%d", entry->rssi);
+
+    char *json_payload = build_telemetry_json(
+        entry->temperature,
+        entry->humidity,
+        rtc_str,
+        rssi_str,
+        (float)entry->battery_mv / 1000.0f,
+        (last_action_t)entry->last_action
+    );
+
+    if (json_payload == NULL) return ESP_FAIL;
+
+    esp_err_t err = board_mqtt_publish_uplink(json_payload, 1);
+    free(json_payload);
+
+    return err;
+}
+
 static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     if (event_base == BOARD_WIFI_EVENTS) {
         if (event_id == BOARD_WIFI_EVENT_CONNECTED) {
@@ -29,11 +93,13 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
             board_mqtt_start();
         } else if (event_id == BOARD_WIFI_EVENT_FAILOVER_EXHAUSTED) {
             ESP_LOGE(TAG, "Excedeu tentativas de Wi-Fi! Exibindo no OLED e indo para Sleep...");
+            save_telemetry_to_fram(24, 60, "10:00", "0", 3.7f, ACTION_TELEMETRY);
             //TODO: Show error on OLED and go to deep sleep
         }
     } else if (event_base == BOARD_MQTT_EVENTS) {
         if (event_id == BOARD_MQTT_EVENT_CONNECTED)
         {
+            fram_ring_flush_to_mqtt(flush_log_callback);
             ESP_LOGI(TAG, "MQTT OK. Enviando Telemetria (CMD 0)...");
             char *json_payload = build_telemetry_json(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
             if (json_payload != NULL)
@@ -164,6 +230,12 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
                 break;
             }
         }
+        else if (event_id == BOARD_MQTT_EVENT_DISCONNECTED) 
+        {
+            ESP_LOGW(TAG, "MQTT Desconectado! Novos logs de telemetria irao para a FRAM.");
+            save_telemetry_to_fram(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
+            
+        }
     }
 }
 
@@ -174,6 +246,7 @@ void app_main(void) {
     // Initialize the FRAM device
     //-------------------------------------
     ESP_ERROR_CHECK(fram_init());
+    ESP_ERROR_CHECK(fram_ring_init());
 
     //-----------------------------------
     // Initialize the I2C bus for the OLED display and RTC
