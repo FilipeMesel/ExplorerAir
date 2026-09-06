@@ -1,6 +1,7 @@
 idf_component_register(SRCS "main.c"
     INCLUDE_DIRS "."
     REQUIRES 
+    esp_driver_gpio
     board_spi_bus 
     board_i2c_bus 
     fram_mb85rs512t 

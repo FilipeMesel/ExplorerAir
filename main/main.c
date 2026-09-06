@@ -171,14 +171,14 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
             }
             case CMD_ID_WIFI_PROV:
             { // Wi-Fi provisioning
-                cmd3_wifi_prov_payload_t wifi_payload;
-                if (json_decode_cmd3_wifi_prov(msg->payload, &wifi_payload) == ESP_OK)
+                cmd4_wifi_prov_payload_t wifi_payload;
+                if (json_decode_cmd4_wifi_prov(msg->payload, &wifi_payload) == ESP_OK)
                 {
-                    ESP_LOGI(TAG, "CMD 3 Recebido: Novas credenciais Wi-Fi -> SSID: %s", wifi_payload.ssid);
+                    ESP_LOGI(TAG, "CMD 4 Recebido: Novas credenciais Wi-Fi -> SSID: %s", wifi_payload.ssid);
                     
                     // TODO: Store it in FRAM
 
-                    // Publish the ACK Wi-Fi (CMD 4)
+                    // Publish the ACK Wi-Fi (CMD 5)
                     wifi_ack_payload_t wifi_ack = {
                         .ssid = wifi_payload.ssid,
                         .password = wifi_payload.password
@@ -189,23 +189,23 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
                         board_mqtt_publish_uplink(ack_json, 1);
                         free(ack_json);
                     } else {
-                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 4) de Wi-Fi!");
+                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 5) de Wi-Fi!");
                     }
                 } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 3 (Wi-Fi Prov)");
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 5 (Wi-Fi Prov)");
                 }
                 break;
             }
             case CMD_ID_SCHEDULE_PROV:
             { // Schedule provisioning
-                cmd5_schedule_payload_t sched_payload;
-                if (json_decode_cmd5_schedule(msg->payload, &sched_payload) == ESP_OK)
+                cmd6_schedule_payload_t sched_payload;
+                if (json_decode_cmd6_schedule(msg->payload, &sched_payload) == ESP_OK)
                 {
-                    ESP_LOGI(TAG, "CMD 5 Recebido: %d agendamentos parseados com sucesso", sched_payload.count);
+                    ESP_LOGI(TAG, "CMD 6 Recebido: %d agendamentos parseados com sucesso", sched_payload.count);
                     
                     // TODO: Add it in the Ring buffer from FRAM
 
-                    // Send the ACK (CMD 6) for each schedule received in the array
+                    // Send the ACK (CMD 7) for each schedule received in the array
                     for (int i = 0; i < sched_payload.count; i++) {
                         schedule_ack_payload_t sched_ack = {
                             .week_days = sched_payload.items[i].week_days,
@@ -219,28 +219,28 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
                             board_mqtt_publish_uplink(ack_json, 1);
                             free(ack_json);
                         } else {
-                            ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 6) para o item %d!", i);
+                            ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 7) para o item %d!", i);
                         }
                     }
                 } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 5 (Schedule Prov)");
+                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 6 (Schedule Prov)");
                 }
                 break;
             }
             case CMD_ID_SET_IR_RAW_DATA:
-            { // CMD 7: Set IR Raw Data
-                cmd7_ir_raw_payload_t ir_payload;
-                if (json_decode_cmd7_ir_raw(msg->payload, &ir_payload) == ESP_OK)
+            { // CMD 8: Set IR Raw Data
+                cmd8_ir_raw_payload_t ir_payload;
+                if (json_decode_cmd8_ir_raw(msg->payload, &ir_payload) == ESP_OK)
                 {
-                    ESP_LOGI(TAG, "CMD 7 Recebido: Frequencia %u Hz | Timings recebidos: %u",
-                             ir_payload.frequency_hz, ir_payload.timings_count);
+                    ESP_LOGI(TAG, "CMD 8 Recebido: Action: %d | Length: %d | Timings Count: %d",
+                             ir_payload.action, ir_payload.length, ir_payload.raw_data_count);
 
                     // TODO: Save the IR raw data in FRAM and send the ACK (CMD 8) with the count of valid timings received
                     
-                    // Send the ACK CMD 8 (ACK)
-                    cmd8_ir_raw_ack_payload_t ack = {
+                    // Send the ACK CMD 9 (ACK)
+                    cmd9_ir_raw_ack_payload_t ack = {
                         .status = "OK",
-                        .count_received = ir_payload.timings_count
+                        .count_received = ir_payload.raw_data_count
                     };
                     
                     char *ack_json = NULL;
@@ -253,6 +253,12 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
                 } else {
                     ESP_LOGE(TAG, "Falha ao parsear payload do CMD 7 (IR Raw)");
                 }
+                break;
+            }
+            case CMD_ID_GET_IR_LEARNED:
+            { // CMD 9: Get IR Learned Data
+                ESP_LOGI(TAG, "CMD 9 Recebido: Solicitacao de dados IR aprendidos");
+                // TODO: Get the specified ir command from FRAM and send it back as CMD 10 (IR Learned Data)
                 break;
             }
             default:
@@ -268,8 +274,20 @@ static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t
         }
     }
 }
-
+#include "driver/gpio.h"
+#define ESP_REG_GPIO                22
 void app_main(void) {
+    // 1. Auto-Sustentação (Power-Hold)
+    gpio_config_t pwr_conf = {
+        .pin_bit_mask = (1ULL << ESP_REG_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&pwr_conf);
+    gpio_set_level(ESP_REG_GPIO, 0);
+
     ESP_LOGI(TAG, "Iniciando aplicação...");
 
     //-----------------------------------
@@ -330,7 +348,7 @@ void app_main(void) {
     // Set dynamic Wi-Fi credentials and start failover connection
     //-----------------------------------------------
     // TODO: In a real application, these credentials would be read from FRAM.
-    wifi_credential_t dynamic_cred = {.ssid = "SEU WIFI", .password = "SUA SENHA"};
+    wifi_credential_t dynamic_cred = {.ssid = "VIVOFIBRA-56ED_EXT", .password = "72233756ED"};
     board_wifi_set_dynamic_credential(&dynamic_cred);
 
     board_wifi_start_failover_connect();

@@ -43,6 +43,7 @@ typedef enum {
 enum {
     CMD_ID_TELEMETRY = 0,
     CMD_ID_RTC_SYNC,
+    CMD_ID_GET_IR_LEARNED,
     CMD_ID_IR_LEARNED,
     CMD_ID_WIFI_PROV,
     CMD_ID_WIFI_ACK,
@@ -83,22 +84,23 @@ typedef struct {
 } schedule_ack_payload_t;
 
 /**
- * @brief IR Raw Data payload structure for CMD 7
+ * @brief IR Raw Data payload structure for CMD 8
  */
 typedef struct {
-    uint16_t frequency_hz;                  /**< Frequência da portadora em Hz (ex: 38000) */
-    uint16_t timings[MAX_IR_RAW_TIMINGS];   /**< Vetor com os tempos em microsegundos */
-    uint16_t timings_count;                 /**< Quantidade de tempos recebidos */
-} cmd7_ir_raw_payload_t;
+    uint8_t action;                          /**< Action/ temperature (0=OFF, 1=ON, 2=18, ..., 9=25) */
+    uint16_t length;                         /**< Expected quantity of timings in raw_data */
+    uint16_t raw_data[MAX_IR_RAW_TIMINGS];   /**< Buffer with the timings in microseconds */
+    uint16_t raw_data_count;                 /**< Actual quantity of timings parsed */
+} cmd8_ir_raw_payload_t;
 
-// --- CMD 8 Payload Structure (Set IR Raw Data ACK) ---
+// --- CMD 9 Payload Structure (Set IR Raw Data ACK) ---
 /**
- * @brief IR Raw Data ACK payload structure for CMD 8
+ * @brief IR Raw Data ACK payload structure for CMD 9
  */
 typedef struct {
     const char *status;                     /**< Processing Status, eg: "OK" or "ERROR" */
     uint16_t count_received;                /**< Processed Quantity of Valid Timings */
-} cmd8_ir_raw_ack_payload_t;
+} cmd9_ir_raw_ack_payload_t;
 
 // --- CMD 1 Payload Structure ---
 /**
@@ -114,14 +116,14 @@ typedef struct {
     uint16_t interval_sec;
 } cmd1_rtc_sync_payload_t;
 
-// --- CMD 3 Payload Structure ---
+// --- CMD 4 Payload Structure ---
 /**
- * @brief Wi-Fi Provisioning payload structure for CMD 3
+ * @brief Wi-Fi Provisioning payload structure for CMD 4
  */
 typedef struct {
     char ssid[33];        /**< Buffer for SSID (max 32 chars + null) */
     char password[65];    /**< Buffer for password (max 64 chars + null) */
-} cmd3_wifi_prov_payload_t;
+} cmd4_wifi_prov_payload_t;
 
 /**
  * @brief Schedule item structure
@@ -134,12 +136,12 @@ typedef struct {
 } schedule_item_t;
 
 /**
- * @brief Schedule payload structure for CMD 5
+ * @brief Schedule payload structure for CMD 6
  */
 typedef struct {
     schedule_item_t items[MAX_SCHEDULES];       /**< Array of schedule items */
     uint8_t count;                              /**< Quantity of schedules parsed in the array */
-} cmd5_schedule_payload_t;
+} cmd6_schedule_payload_t;
 
 /**
  * @brief Serializes CMD 0 (Initial Telemetry) into a JSON string.
@@ -211,36 +213,36 @@ esp_err_t json_get_cmd_id(const char *json_str, int *cmd_id);
 esp_err_t json_decode_cmd1_rtc_sync(const char *json_str, cmd1_rtc_sync_payload_t *payload);
 
 /**
- * @brief CMD 3 Parser (Wi-Fi Credentials Provisioning).
+ * @brief CMD 4 Parser (Wi-Fi Credentials Provisioning).
  */
-esp_err_t json_decode_cmd3_wifi_prov(const char *json_str, cmd3_wifi_prov_payload_t *payload);
+esp_err_t json_decode_cmd4_wifi_prov(const char *json_str, cmd4_wifi_prov_payload_t *payload);
 
 /**
- * @brief CMD 5 Parser (Schedule Provisioning).
+ * @brief CMD 6 Parser (Schedule Provisioning).
  */
-esp_err_t json_decode_cmd5_schedule(const char *json_str, cmd5_schedule_payload_t *payload);
+esp_err_t json_decode_cmd6_schedule(const char *json_str, cmd6_schedule_payload_t *payload);
 
 /**
- * @brief Decode the JSON payload of CMD 7 (Set IR Raw Data).
+ * @brief Decode the JSON payload of CMD 8 (Set IR Raw Data).
  * 
  * @param[in]  json_str Joson String received from MQTT.
  * @param[out] payload  Pointer to the structure where the extracted data will be stored.
  * 
  * @return ESP_OK on success, ESP_ERR_INVALID_ARG on failure.
  */
-esp_err_t json_decode_cmd7_ir_raw(const char *json_str, cmd7_ir_raw_payload_t *payload);
+esp_err_t json_decode_cmd8_ir_raw(const char *json_str, cmd8_ir_raw_payload_t *payload);
 
 /**
- * @brief Serializes the ACK response of CMD 8 (Set IR Raw Data ACK) to JSON.
+ * @brief Serializes the ACK response of CMD 9 (Set IR Raw Data ACK) to JSON.
  * 
- * @param[in]  ack     Pointer to the ACK data structure of CMD 8.
+ * @param[in]  ack     Pointer to the ACK data structure of CMD 9.
  * @param[out] out_str Pointer to char* where the allocated JSON string will be stored.
  * 
  * @note The caller must free the pointer (*out_str) using free() after use.
  * 
  * @return ESP_OK on success, ESP_ERR_INVALID_ARG or ESP_ERR_NO_MEM on failure.
  */
-esp_err_t json_encode_ir_raw_ack(const cmd8_ir_raw_ack_payload_t *ack, char **out_str);
+esp_err_t json_encode_ir_raw_ack(const cmd9_ir_raw_ack_payload_t *ack, char **out_str);
 
 #ifdef __cplusplus
 }

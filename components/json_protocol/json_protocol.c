@@ -66,7 +66,7 @@ esp_err_t json_encode_wifi_ack(const wifi_ack_payload_t *ack, char **out_str) {
         return ESP_ERR_NO_MEM;
     }
 
-    cJSON_AddNumberToObject(root, "cmd_id", 4);
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_WIFI_ACK);
     cJSON_AddStringToObject(root, "ssid", ack->ssid ? ack->ssid : "");
     cJSON_AddStringToObject(root, "password", ack->password ? ack->password : "");
 
@@ -93,7 +93,7 @@ esp_err_t json_encode_schedule_ack(const schedule_ack_payload_t *ack, char **out
         return ESP_ERR_NO_MEM;
     }
 
-    cJSON_AddNumberToObject(root, "cmd_id", 6);
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_SCHEDULE_ACK);
     cJSON_AddNumberToObject(root, "week_days", ack->week_days);
     cJSON_AddStringToObject(root, "time", ack->time ? ack->time : "00:00");
     cJSON_AddStringToObject(root, "action", ack->action ? ack->action : "");
@@ -210,14 +210,14 @@ esp_err_t json_decode_cmd1_rtc_sync(const char *json_str, cmd1_rtc_sync_payload_
     return ESP_OK;
 }
 
-esp_err_t json_decode_cmd3_wifi_prov(const char *json_str, cmd3_wifi_prov_payload_t *payload) {
+esp_err_t json_decode_cmd4_wifi_prov(const char *json_str, cmd4_wifi_prov_payload_t *payload) {
     if (json_str == NULL || payload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
     cJSON *root = cJSON_Parse(json_str);
     if (root == NULL) {
-        ESP_LOGE(TAG, "CMD 3: JSON invalido");
+        ESP_LOGE(TAG, "CMD 4: JSON invalido");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -226,7 +226,7 @@ esp_err_t json_decode_cmd3_wifi_prov(const char *json_str, cmd3_wifi_prov_payloa
 
     if (!cJSON_IsString(ssid) || (ssid->valuestring == NULL) ||
         !cJSON_IsString(pass) || (pass->valuestring == NULL)) {
-        ESP_LOGE(TAG, "CMD 3: Estrutura de ssid/password invalida");
+        ESP_LOGE(TAG, "CMD 4: Estrutura de ssid/password invalida");
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
     }
@@ -239,16 +239,16 @@ esp_err_t json_decode_cmd3_wifi_prov(const char *json_str, cmd3_wifi_prov_payloa
     return ESP_OK;
 }
 
-esp_err_t json_decode_cmd5_schedule(const char *json_str, cmd5_schedule_payload_t *payload) {
+esp_err_t json_decode_cmd6_schedule(const char *json_str, cmd6_schedule_payload_t *payload) {
     if (json_str == NULL || payload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    memset(payload, 0, sizeof(cmd5_schedule_payload_t));
+    memset(payload, 0, sizeof(cmd6_schedule_payload_t));
 
     cJSON *root = cJSON_Parse(json_str);
     if (root == NULL) {
-        ESP_LOGE(TAG, "CMD 5: JSON invalido");
+        ESP_LOGE(TAG, "CMD 6: JSON invalido");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -267,7 +267,7 @@ esp_err_t json_decode_cmd5_schedule(const char *json_str, cmd5_schedule_payload_
 
     // Validate schedule_id range (0 to 10)
     if (idx->valueint < 0 || idx->valueint >= MAX_SCHEDULES) {
-        ESP_LOGE(TAG, "CMD 5: schedule_id fora dos limites (0-10): %d", idx->valueint);
+        ESP_LOGE(TAG, "CMD 6: schedule_id fora dos limites (0-10): %d", idx->valueint);
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
     }
@@ -285,56 +285,63 @@ esp_err_t json_decode_cmd5_schedule(const char *json_str, cmd5_schedule_payload_
 }
 
 // ----------------------------------------------------------------------------
-// CMD 7 Parser - Set IR Raw Data
+// CMD 8 Parser - Set IR Raw Data
 // ----------------------------------------------------------------------------
-esp_err_t json_decode_cmd7_ir_raw(const char *json_str, cmd7_ir_raw_payload_t *payload) {
+esp_err_t json_decode_cmd8_ir_raw(const char *json_str, cmd8_ir_raw_payload_t *payload) {
     if (json_str == NULL || payload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    memset(payload, 0, sizeof(cmd7_ir_raw_payload_t));
+    memset(payload, 0, sizeof(cmd8_ir_raw_payload_t));
 
     cJSON *root = cJSON_Parse(json_str);
     if (root == NULL) {
-        ESP_LOGE(TAG, "CMD 7: JSON invalido");
+        ESP_LOGE(TAG, "CMD 8: JSON invalido");
         return ESP_ERR_INVALID_ARG;
     }
 
-    cJSON *freq = cJSON_GetObjectItemCaseSensitive(root, "frequency");
-    cJSON *timings = cJSON_GetObjectItemCaseSensitive(root, "timings");
+    cJSON *action = cJSON_GetObjectItemCaseSensitive(root, "action");
+    cJSON *length = cJSON_GetObjectItemCaseSensitive(root, "length");
+    cJSON *raw_data = cJSON_GetObjectItemCaseSensitive(root, "raw_data");
 
-    if (!cJSON_IsNumber(freq) || !cJSON_IsArray(timings)) {
-        ESP_LOGE(TAG, "CMD 7: Campos 'frequency' ou 'timings' ausentes/invalidos");
+    if (!cJSON_IsNumber(action) || !cJSON_IsNumber(length) || !cJSON_IsArray(raw_data)) {
+        ESP_LOGE(TAG, "CMD 8: Campos 'action', 'length' ou 'raw_data' ausentes/invalidos");
         cJSON_Delete(root);
         return ESP_ERR_INVALID_ARG;
     }
 
-    payload->frequency_hz = (uint16_t)freq->valueint;
+    payload->action = (uint8_t)action->valueint;
+    payload->length = (uint16_t)length->valueint;
 
     uint16_t count = 0;
     cJSON *item = NULL;
 
-    cJSON_ArrayForEach(item, timings) {
+    cJSON_ArrayForEach(item, raw_data) {
         if (count >= MAX_IR_RAW_TIMINGS) {
-            ESP_LOGW(TAG, "CMD 7: Limite de %d timings excedido, ignorando restantes", MAX_IR_RAW_TIMINGS);
+            ESP_LOGW(TAG, "CMD 8: Limite de %d timings excedido, ignorando restantes", MAX_IR_RAW_TIMINGS);
             break;
         }
 
         if (cJSON_IsNumber(item)) {
-            payload->timings[count++] = (uint16_t)item->valueint;
+            payload->raw_data[count++] = (uint16_t)item->valueint;
         }
     }
 
-    payload->timings_count = count;
+    payload->raw_data_count = count;
     cJSON_Delete(root);
 
-    return (count > 0) ? ESP_OK : ESP_ERR_INVALID_ARG;
+    if (count == 0) {
+        ESP_LOGE(TAG, "CMD 8: Nenhum timing valido extraido de 'raw_data'");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return ESP_OK;
 }
 
 // ----------------------------------------------------------------------------
-// CMD 8 Encoder - Set IR Raw Data ACK
+// CMD 9 Encoder - Set IR Raw Data ACK
 // ----------------------------------------------------------------------------
-esp_err_t json_encode_ir_raw_ack(const cmd8_ir_raw_ack_payload_t *ack, char **out_str) {
+esp_err_t json_encode_ir_raw_ack(const cmd9_ir_raw_ack_payload_t *ack, char **out_str) {
     if (ack == NULL || out_str == NULL) {
         ESP_LOGE(TAG, "Invalid argument: NULL pointer provided");
         return ESP_ERR_INVALID_ARG;
