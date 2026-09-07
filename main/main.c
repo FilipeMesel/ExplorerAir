@@ -28,20 +28,7 @@
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
-#define ESP_REG_GPIO 22
-
-// Fallbacks de compilação caso as macros do Kconfig não estejam visíveis
-#ifndef CONFIG_MQTT_BROKER_URI
-#define CONFIG_MQTT_BROKER_URI "mqtt://broker.hivemq.com:1883"
-#endif
-
-#ifndef CONFIG_MQTT_BUFFER_SIZE
-#define CONFIG_MQTT_BUFFER_SIZE 2048
-#endif
-
-#ifndef CONFIG_MQTT_OUT_BUFFER_SIZE
-#define CONFIG_MQTT_OUT_BUFFER_SIZE 2048
-#endif
+#define GPIO_POWER_HOLD_PIN 22
 
 static const char *TAG = "MAIN_APP";
 
@@ -55,7 +42,8 @@ typedef enum {
     APP_EVENT_MQTT_CONNECTED,
     APP_EVENT_MQTT_DISCONNECTED,
     APP_EVENT_MQTT_DATA_RECEIVED,
-    APP_EVENT_TIMER_SET_SUCCESS
+    APP_EVENT_TIMER_SET_SUCCESS,
+    APP_EVENT_SHUTDOWN_REQUESTED
 } app_event_type_t;
 
 
@@ -69,13 +57,12 @@ typedef struct {
 // 3. Declarar a fila global
 static QueueHandle_t s_app_event_queue = NULL;
 
-static void force_sleep()
+static void force_sleep(void)
 {
-    // Habilita a interrupção por timer de 10 segundos no RTC
-    // 3. Limpa flags residuais e reseta interrupções pendentes do RTC
+    // 1. Limpa flags residuais do RTC
     rtc_ht8563_clear_flags();
 
-    // 4. Configura a hora inicial do RTC para 00:01:50
+    // 2. Ajusta hora do RTC
     rtc_date_time_t dt_initial = {
         .second = 50,
         .minute = 1,
@@ -83,35 +70,30 @@ static void force_sleep()
         .day = 1,
         .weekday = 1,
         .month = 1,
-        .year = 2026};
+        .year = 2026
+    };
 
-    if (rtc_ht8563_set_time(&dt_initial) == ESP_OK)
-    {
+    if (rtc_ht8563_set_time(&dt_initial) == ESP_OK) {
         ESP_LOGI(TAG, "Hora inicial ajustada para: 00:01:50");
-    }
-    else
-    {
+    } else {
         ESP_LOGE(TAG, "Falha ao definir hora inicial no RTC");
     }
 
-    // 5. Configura o Alarme do HT8563 para disparar às 00:02:00
-    // rtc_ht8563_set_alarm(hour, minute)
-    if (rtc_ht8563_set_alarm(0, 2) == ESP_OK)
-    {
+    // 3. Configura alarme do RTC
+    if (rtc_ht8563_set_alarm(0, 2) == ESP_OK) {
         ESP_LOGI(TAG, "Alarme programado com sucesso para 00:02:00");
-        ESP_LOGI(TAG, "[RTC] Timer de 10s configurado com sucesso!");
-    }
-    else
-    {
+    } else {
         ESP_LOGE(TAG, "Falha ao configurar alarme no RTC");
     }
 
-    // 2. Encerra periféricos e rede
+    // 4. Parada dos periféricos de rede
+    board_mqtt_stop();
     board_wifi_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // 3. Corta a energia
-    gpio_set_level(ESP_REG_GPIO, 1);
+    // 5. Corta a energia acionando o pino do LDO/Regulador
+    ESP_LOGI(TAG, "Desligando alimentação via GPIO_POWER_HOLD_PIN...");
+    gpio_set_level(GPIO_POWER_HOLD_PIN, 1);
 }
 
 /**
@@ -157,7 +139,11 @@ static void process_incoming_mqtt_command(const char *payload) {
             {
             ESP_LOGI(TAG, "[MQTT RX] Command 8 Received: Set IR Raw Data Payload");
             // TODO: Decode payload with json_decode_cmd8_ir_raw and write waveforms to FRAM
-            force_sleep();
+
+            // Em vez de chamar force_sleep() diretamente:
+            app_event_t evt = {
+                .type = APP_EVENT_SHUTDOWN_REQUESTED};
+            xQueueSend(s_app_event_queue, &evt, portMAX_DELAY);
             }
             break;
 
@@ -263,63 +249,82 @@ static esp_err_t setup_simulated_fram_wifi_credentials(void) {
     return board_wifi_set_dynamic_credential(&cred);
 }
 
-void app_main(void) {
+/**
+ * @brief Initializes all system hardware components, drivers, and buses.
+ * 
+ * @return esp_err_t ESP_OK on success, or an error code describing the failure.
+ */
+static esp_err_t board_hardware_init(void) {
     // Disable brownout detector during startup if supply fluctuates
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
     // 1. Auto-Power Hold Circuit Initialization
     gpio_config_t pwr_conf = {
-        .pin_bit_mask = (1ULL << ESP_REG_GPIO),
+        .pin_bit_mask = (1ULL << GPIO_POWER_HOLD_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
-    gpio_config(&pwr_conf);
+    esp_err_t ret = gpio_config(&pwr_conf);
+    if (ret != ESP_OK) return ret;
 
     // 2. Initialize NVS Flash (Required by ESP-IDF Wi-Fi Stack)
-    esp_err_t ret = nvs_flash_init();
+    ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    if (ret != ESP_OK) return ret;
 
-    // 3. Hardware Buses & Drivers Initialization
-    ESP_ERROR_CHECK(board_i2c_bus_init());
-    ESP_ERROR_CHECK(rtc_ht8563_init());
-    ESP_ERROR_CHECK(fram_init());
-    ESP_ERROR_CHECK(fram_ring_init());
-    ESP_ERROR_CHECK(oled_init(OLED_I2C_ADDR_DEFAULT));
+    // 3. Hardware Buses & Peripheral Drivers Initialization
+    ret = board_i2c_bus_init();
+    if (ret != ESP_OK) return ret;
 
-    ESP_LOGI(TAG, "=== explorerAirConditioner Firmware System Initialized ===");
+    ret = rtc_ht8563_init();
+    if (ret != ESP_OK) return ret;
 
-    // 4. Create Main Queue
-    s_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
-    if (s_app_event_queue == NULL) {
-        ESP_LOGE(TAG, "Critical: Failed to create central application event queue");
-        return;
-    }
+    ret = fram_init();
+    if (ret != ESP_OK) return ret;
 
-    // 5. Initialize Wi-Fi Driver and Register Event Handlers
-    ESP_ERROR_CHECK(board_wifi_init());
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        BOARD_WIFI_EVENTS, ESP_EVENT_ANY_ID, &on_wifi_event_handler, NULL, NULL));
+    ret = fram_ring_init();
+    if (ret != ESP_OK) return ret;
 
-    // 6. Load Dynamic Wi-Fi Credentials from FRAM
-    ESP_ERROR_CHECK(setup_simulated_fram_wifi_credentials());
+    ret = oled_init(OLED_I2C_ADDR_DEFAULT);
+    if (ret != ESP_OK) return ret;
 
-    // 7. Analyze Boot/Wakeup Reason (Task 0)
+    // 4. Initialize Wi-Fi Driver and Register Event Handlers
+    ret = board_wifi_init();
+    if (ret != ESP_OK) return ret;
+
+    ret = esp_event_handler_instance_register(
+        BOARD_WIFI_EVENTS, ESP_EVENT_ANY_ID, &on_wifi_event_handler, NULL, NULL);
+    if (ret != ESP_OK) return ret;
+
+    // 5. Load Wi-Fi Credentials
+    ret = setup_simulated_fram_wifi_credentials();
+    if (ret != ESP_OK) return ret;
+
+    ESP_LOGI(TAG, "=== explorerAirConditioner Hardware System Initialized ===");
+    return ESP_OK;
+}
+
+/**
+ * @brief FreeRTOS Task executing the central application Finite State Machine (FSM).
+ * 
+ * @param pvParameters Unused task parameter pointer.
+ */
+static void app_fsm_task(void *pvParameters) {
+    app_event_t current_evt;
+
+    // Envia o evento inicial para disparar a sequencia
     boot_event_t boot_cause = EVENT_BOOT_POWER_ON;
-
     app_event_t initial_evt = {
         .type = APP_EVENT_BOOT_ANALYZED,
         .boot_cause = boot_cause
     };
     xQueueSend(s_app_event_queue, &initial_evt, portMAX_DELAY);
 
-    // 8. Main Application Finite State Machine (FSM Loop)
-    app_event_t current_evt;
     while (1) {
         if (xQueueReceive(s_app_event_queue, &current_evt, portMAX_DELAY) == pdTRUE) {
             switch (current_evt.type) {
@@ -350,7 +355,6 @@ void app_main(void) {
                     ESP_LOGI(TAG, "[FSM] Connected to MQTT Broker successfully!");
 
                     vTaskDelay(pdMS_TO_TICKS(100));
-                    // Send Initial Telemetry (CMD 0) using mocked values
                     if (send_mocked_initial_telemetry() == ESP_OK) {
                         ESP_LOGI(TAG, "[FSM] Telemetry CMD 0 successfully published");
                     } else {
@@ -369,10 +373,11 @@ void app_main(void) {
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
                     ESP_LOGI(TAG, "[FSM] Sequence Completed. Powering down circuit...");
-                    gpio_set_level(ESP_REG_GPIO, 1);
-                    while (1) {
-                        vTaskDelay(pdMS_TO_TICKS(1000));
-                    }
+                    break;
+
+                case APP_EVENT_SHUTDOWN_REQUESTED:
+                    ESP_LOGI(TAG, "[FSM] Shutdown requested. Executing forced sleep routine...");
+                    force_sleep();
                     break;
 
                 default:
@@ -380,5 +385,31 @@ void app_main(void) {
                     break;
             }
         }
+    }
+}
+
+void app_main(void) {
+    // 1. Create Main Event Queue
+    s_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
+    if (s_app_event_queue == NULL) {
+        ESP_LOGE(TAG, "Critical: Failed to create central application event queue");
+        return;
+    }
+
+    // 2. Initialize Hardware & Peripherals
+    ESP_ERROR_CHECK(board_hardware_init());
+
+    // 3. Create Main FSM Task
+    BaseType_t ret = xTaskCreate(
+        app_fsm_task,
+        "app_fsm_task",
+        8192,
+        NULL,
+        5,
+        NULL
+    );
+
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Critical: Failed to create FSM task");
     }
 }
