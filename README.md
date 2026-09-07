@@ -324,6 +324,6 @@ idf.py build
 5. Flash de Project
 
 ```bash
-idf.py -p <PORT> flash monitor
+idf.py -p <PORT> bootloader-flash flash monitor
 ```
 (Replace <PORT> with your serial device name, e.g., COM3 on Windows or /dev/ttyUSB0 on Linux).

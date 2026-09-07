@@ -1,281 +1,78 @@
+/**
+ * @file main.c
+ * @brief Main application entry point and Event-Driven FSM for explorerAirConditioner.
+ * @author Embedded Software Architect
+ * @date 2026-09-07
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_event.h"
-#include "sdkconfig.h"
+#include "driver/gpio.h"
 #include "nvs_flash.h"
-#include "nvs.h"
-#include "cJSON.h"
 
+#include "main.h"
 #include "fram_mb85rs512t.h"
-
 #include "board_i2c_bus.h"
-#include "display_oled.h"
 #include "rtc_ht8563.h"
-
+#include "display_oled.h"
 #include "board_wifi.h"
 #include "board_mqtt.h"
-
 #include "json_protocol.h"
+
+#define ESP_REG_GPIO 22
 
 static const char *TAG = "MAIN_APP";
 
 /**
- * @brief Converts telemetry data to FRAM log entry format.
- * 
- * @param telemetry struct containing telemetry data.
- * @param entry FRAM log entry to be populated.
+ * @brief System Application Events for Main Queue
  */
-static void telemetry_to_fram_entry(const telemetry_data_t *telemetry, fram_log_entry_t *entry) {
-    memset(entry, 0, sizeof(fram_log_entry_t));
-    entry->temperature = (int16_t)telemetry->temperature;
-    entry->humidity = (int16_t)telemetry->humidity;
-    
-    int h = 0, m = 0;
-    sscanf(telemetry->rtc_time, "%d:%d", &h, &m);
-    entry->hour = (uint8_t)h;
-    entry->minute = (uint8_t)m;
-    
-    entry->rssi = (int8_t)atoi(telemetry->rssi);
-    entry->battery_mv = (uint16_t)(telemetry->battery_voltage * 1000.0f);
-    entry->last_action = (uint8_t)telemetry->last_action;
-}
+typedef enum {
+    APP_EVENT_BOOT_ANALYZED,
+    APP_EVENT_WIFI_CONNECTED,
+    APP_EVENT_WIFI_FAILOVER_EXHAUSTED,
+    APP_EVENT_TIMER_SET_SUCCESS
+} app_event_type_t;
+
+typedef struct {
+    app_event_type_t type;
+    boot_event_t boot_cause;
+} app_event_t;
+
+static QueueHandle_t s_app_event_queue = NULL;
 
 /**
- * @brief Saves telemetry data to the FRAM ring buffer.
- * 
- * @param temp Temperature value.
- * @param humidity Humidity value.
- * @param rtc_time RTC time string.
- * @param rssi RSSI string.
- * @param bat_v Battery voltage.
- * @param action Last action performed.
- * @return esp_err_t ESP_OK on success, error code on failure.
+ * @brief Handler for Wi-Fi manager event bridge into FreeRTOS Queue.
  */
-static esp_err_t save_telemetry_to_fram(int temp, int humidity, const char *rtc_time, 
-                                        const char *rssi, float bat_v, last_action_t action) 
-{
-    telemetry_data_t telemetry = {
-        .temperature = temp,
-        .humidity = humidity,
-        .battery_voltage = bat_v,
-        .last_action = action
-    };
-    snprintf(telemetry.rtc_time, sizeof(telemetry.rtc_time), "%s", rtc_time ? rtc_time : "00:00");
-    snprintf(telemetry.rssi, sizeof(telemetry.rssi), "%s", rssi ? rssi : "0");
-
-    // Prepare the struct for the FRAM
-    fram_log_entry_t entry;
-    telemetry_to_fram_entry(&telemetry, &entry);
-
-    esp_err_t err = fram_ring_push(&entry);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Telemetria salva na FRAM. Total armazenado: %u", fram_ring_get_count());
-    }
-    return err;
-}
-
-/**
- * @brief Callback function for flushing log entries to MQTT.
- * 
- * @param entry FRAM log entry to be processed.
- * @return esp_err_t ESP_OK on success, error code on failure.
- */
-static esp_err_t flush_log_callback(const fram_log_entry_t *entry) {
-    if (entry == NULL) return ESP_ERR_INVALID_ARG;
-
-    char rtc_str[8];
-    char rssi_str[8];
-    snprintf(rtc_str, sizeof(rtc_str), "%02d:%02d", entry->hour, entry->minute);
-    snprintf(rssi_str, sizeof(rssi_str), "%d", entry->rssi);
-
-    char *json_payload = build_telemetry_json(
-        entry->temperature,
-        entry->humidity,
-        rtc_str,
-        rssi_str,
-        (float)entry->battery_mv / 1000.0f,
-        (last_action_t)entry->last_action
-    );
-
-    if (json_payload == NULL) return ESP_FAIL;
-
-    esp_err_t err = board_mqtt_publish_uplink(json_payload, 1);
-    free(json_payload);
-
-    return err;
-}
-
-/**
- * @brief System event handler for managing various system events.
- * 
- * @param arg Argument pointer.
- * @param event_base Event base.
- * @param event_id Event ID.
- * @param event_data Event data pointer.
- */
-static void system_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    if (event_base == BOARD_WIFI_EVENTS) {
-        if (event_id == BOARD_WIFI_EVENT_CONNECTED) {
-            ESP_LOGI(TAG, "Wi-Fi OK. Conectando ao MQTT...");
-            board_mqtt_start();
-        } else if (event_id == BOARD_WIFI_EVENT_FAILOVER_EXHAUSTED) {
-            ESP_LOGE(TAG, "Excedeu tentativas de Wi-Fi! Exibindo no OLED e indo para Sleep...");
-            save_telemetry_to_fram(24, 60, "10:00", "0", 3.7f, ACTION_TELEMETRY);
-            //TODO: Show error on OLED and go to deep sleep
-        }
-    } else if (event_base == BOARD_MQTT_EVENTS) {
-        if (event_id == BOARD_MQTT_EVENT_CONNECTED)
-        {
-            fram_ring_flush_to_mqtt(flush_log_callback);
-            ESP_LOGI(TAG, "MQTT OK. Enviando Telemetria (CMD 0)...");
-            char *json_payload = build_telemetry_json(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
-            if (json_payload != NULL)
-            {
-                board_mqtt_publish_uplink(json_payload, 1);
-                free(json_payload);
-            }
-            else
-            {
-                ESP_LOGE(TAG, "Falha ao gerar JSON de telemetria!");
-            }
-        }
-        else if (event_id == BOARD_MQTT_EVENT_DATA_RECEIVED)
-        {
-            board_mqtt_data_t *msg = (board_mqtt_data_t *)event_data;
-            int cmd_id = -1;
-            if (json_get_cmd_id(msg->payload, &cmd_id) != ESP_OK)
-            {
-                ESP_LOGE(TAG, "JSON recebido com formato ou cmd_id invalido");
-                return;
-            }
-
-            switch (cmd_id)
-            {
-            case CMD_ID_RTC_SYNC:
-            { // Sync RTC
-                cmd1_rtc_sync_payload_t rtc_payload;
-                if (json_decode_cmd1_rtc_sync(msg->payload, &rtc_payload) == ESP_OK)
-                {
-                    ESP_LOGI(TAG, "CMD 1 Recebido: Hora %02d:%02d:%02d | Intervalo Telemetria: %ds",
-                             rtc_payload.hour, rtc_payload.minute, rtc_payload.second,
-                             rtc_payload.interval_sec);
-                    
-                    // TODO: Update the registers of the RTC HT8563 and the telemetry timer
-                } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 1 (RTC Sync)");
-                }
-                break;
-            }
-            case CMD_ID_WIFI_PROV:
-            { // Wi-Fi provisioning
-                cmd4_wifi_prov_payload_t wifi_payload;
-                if (json_decode_cmd4_wifi_prov(msg->payload, &wifi_payload) == ESP_OK)
-                {
-                    ESP_LOGI(TAG, "CMD 4 Recebido: Novas credenciais Wi-Fi -> SSID: %s", wifi_payload.ssid);
-                    
-                    // TODO: Store it in FRAM
-
-                    // Publish the ACK Wi-Fi (CMD 5)
-                    wifi_ack_payload_t wifi_ack = {
-                        .ssid = wifi_payload.ssid,
-                        .password = wifi_payload.password
-                    };
-
-                    char *ack_json = NULL;
-                    if (json_encode_wifi_ack(&wifi_ack, &ack_json) == ESP_OK && ack_json != NULL) {
-                        board_mqtt_publish_uplink(ack_json, 1);
-                        free(ack_json);
-                    } else {
-                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 5) de Wi-Fi!");
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 5 (Wi-Fi Prov)");
-                }
-                break;
-            }
-            case CMD_ID_SCHEDULE_PROV:
-            { // Schedule provisioning
-                cmd6_schedule_payload_t sched_payload;
-                if (json_decode_cmd6_schedule(msg->payload, &sched_payload) == ESP_OK)
-                {
-                    ESP_LOGI(TAG, "CMD 6 Recebido: %d agendamentos parseados com sucesso", sched_payload.count);
-                    
-                    // TODO: Add it in the Ring buffer from FRAM
-
-                    // Send the ACK (CMD 7) for each schedule received in the array
-                    for (int i = 0; i < sched_payload.count; i++) {
-                        schedule_ack_payload_t sched_ack = {
-                            .week_days = sched_payload.items[i].week_days,
-                            .time = sched_payload.items[i].time,
-                            .action = sched_payload.items[i].action,
-                            .status = "OK"
-                        };
-
-                        char *ack_json = NULL;
-                        if (json_encode_schedule_ack(&sched_ack, &ack_json) == ESP_OK && ack_json != NULL) {
-                            board_mqtt_publish_uplink(ack_json, 1);
-                            free(ack_json);
-                        } else {
-                            ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 7) para o item %d!", i);
-                        }
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 6 (Schedule Prov)");
-                }
-                break;
-            }
-            case CMD_ID_SET_IR_RAW_DATA:
-            { // CMD 8: Set IR Raw Data
-                cmd8_ir_raw_payload_t ir_payload;
-                if (json_decode_cmd8_ir_raw(msg->payload, &ir_payload) == ESP_OK)
-                {
-                    ESP_LOGI(TAG, "CMD 8 Recebido: Action: %d | Length: %d | Timings Count: %d",
-                             ir_payload.action, ir_payload.length, ir_payload.raw_data_count);
-
-                    // TODO: Save the IR raw data in FRAM and send the ACK (CMD 8) with the count of valid timings received
-                    
-                    // Send the ACK CMD 9 (ACK)
-                    cmd9_ir_raw_ack_payload_t ack = {
-                        .status = "OK",
-                        .count_received = ir_payload.raw_data_count
-                    };
-                    
-                    char *ack_json = NULL;
-                    if (json_encode_ir_raw_ack(&ack, &ack_json) == ESP_OK && ack_json != NULL) {
-                        board_mqtt_publish_uplink(ack_json, 1);
-                        free(ack_json);
-                    } else {
-                        ESP_LOGE(TAG, "Falha ao gerar ACK (CMD 8) de IR Raw!");
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Falha ao parsear payload do CMD 7 (IR Raw)");
-                }
-                break;
-            }
-            case CMD_ID_GET_IR_LEARNED:
-            { // CMD 9: Get IR Learned Data
-                ESP_LOGI(TAG, "CMD 9 Recebido: Solicitacao de dados IR aprendidos");
-                // TODO: Get the specified ir command from FRAM and send it back as CMD 10 (IR Learned Data)
-                break;
-            }
-            default:
-                ESP_LOGW(TAG, "Comando Downlink nao reconhecido: CMD %d", cmd_id);
-                break;
-            }
-        }
-        else if (event_id == BOARD_MQTT_EVENT_DISCONNECTED) 
-        {
-            ESP_LOGW(TAG, "MQTT Desconectado! Novos logs de telemetria irao para a FRAM.");
-            save_telemetry_to_fram(24, 60, "10:00", "-10", 3.7f, ACTION_TELEMETRY);
-            
+static void on_wifi_event_handler(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    app_event_t evt = {0};
+    if (base == BOARD_WIFI_EVENTS) {
+        if (id == BOARD_WIFI_EVENT_CONNECTED) {
+            evt.type = APP_EVENT_WIFI_CONNECTED;
+            xQueueSend(s_app_event_queue, &evt, portMAX_DELAY);
+        } else if (id == BOARD_WIFI_EVENT_FAILOVER_EXHAUSTED) {
+            evt.type = APP_EVENT_WIFI_FAILOVER_EXHAUSTED;
+            xQueueSend(s_app_event_queue, &evt, portMAX_DELAY);
         }
     }
 }
-#include "driver/gpio.h"
-#define ESP_REG_GPIO                22
+
+/**
+ * @brief Simulates reading/writing the dynamic Wi-Fi credentials from FRAM.
+ */
+static esp_err_t setup_simulated_fram_wifi_credentials(void) {
+    wifi_credential_t cred = {0};
+    snprintf(cred.ssid, sizeof(cred.ssid), "VIVOFIBRA-56ED_EXT");
+    snprintf(cred.password, sizeof(cred.password), "72233756ED");
+
+    ESP_LOGI(TAG, "Credencial Dinâmica Carregada: SSID='%s'", cred.ssid);
+    return board_wifi_set_dynamic_credential(&cred);
+}
+
 void app_main(void) {
     // 1. Auto-Sustentação (Power-Hold)
     gpio_config_t pwr_conf = {
@@ -286,103 +83,86 @@ void app_main(void) {
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&pwr_conf);
-    gpio_set_level(ESP_REG_GPIO, 0);
 
-    ESP_LOGI(TAG, "Iniciando aplicação...");
-
-    //-----------------------------------
-    // Initialize the FRAM device
-    //-------------------------------------
-    ESP_ERROR_CHECK(fram_init());
-    ESP_ERROR_CHECK(fram_ring_init());
-
-    //-----------------------------------
-    // Initialize the I2C bus for the OLED display and RTC
-    //-----------------------------------
-    ESP_ERROR_CHECK(board_i2c_bus_init());
-
-    //-----------------------------------
-    // Initialize the RTC device
-    //-----------------------------------
-    ESP_ERROR_CHECK(rtc_ht8563_init());
-
-    //-----------------------------------
-    // Initialize the OLED display with default I2C address
-    //-----------------------------------
-    ESP_ERROR_CHECK(oled_init(OLED_I2C_ADDR_DEFAULT));
-
-    //-----------------------------------
-    // Initialize Wi-Fi and MQTT subsystems
-    //-----------------------------------
-
-    /**
-     * @brief Initialize NVS flash storage
-     *
-     * It's necessary to initialize NVS before using Wi-Fi or MQTT, as they may rely on stored credentials or configurations.
-     * 
-     */
+    // 2. Inicializa NVS (Necessário para a pilha Wi-Fi do ESP-IDF)
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    //-----------------------------------
-    // Register event handlers for Wi-Fi and MQTT events
-    //-----------------------------------
-    esp_event_handler_instance_register(BOARD_WIFI_EVENTS, ESP_EVENT_ANY_ID, &system_event_handler, NULL, NULL);
-    esp_event_handler_instance_register(BOARD_MQTT_EVENTS, ESP_EVENT_ANY_ID, &system_event_handler, NULL, NULL);
+    // 3. Inicialização dos Barramentos e Periféricos
+    ESP_ERROR_CHECK(board_i2c_bus_init());
+    ESP_ERROR_CHECK(rtc_ht8563_init());
+    ESP_ERROR_CHECK(fram_init());
+    ESP_ERROR_CHECK(fram_ring_init());
+    ESP_ERROR_CHECK(oled_init(OLED_I2C_ADDR_DEFAULT));
 
-    //-----------------------------------------------
-    // Initialize Wi-Fi and MQTT
-    //-----------------------------------------------
-    ESP_ERROR_CHECK(board_wifi_init());
-    ESP_ERROR_CHECK(board_mqtt_init(CONFIG_MQTT_BROKER_URI, 
-                                    CONFIG_MQTT_BUFFER_SIZE, 
-                                    CONFIG_MQTT_OUT_BUFFER_SIZE));
+    ESP_LOGI(TAG, "=== Sistema explorerAirConditioner Inicializado ===");
 
-    //-----------------------------------------------
-    // Set dynamic Wi-Fi credentials and start failover connection
-    //-----------------------------------------------
-    // TODO: In a real application, these credentials would be read from FRAM.
-    wifi_credential_t dynamic_cred = {.ssid = "VIVOFIBRA-56ED_EXT", .password = "72233756ED"};
-    board_wifi_set_dynamic_credential(&dynamic_cred);
-
-    board_wifi_start_failover_connect();
-
-#if CONFIG_ENABLE_FRAM_TESTS
-    fram_run_tests();
-#endif
-
-#if CONFIG_OLED_RUN_TESTS
-    oled_run_tests();
-#endif
-
-#if RTC_HT8563_TEST_READ_DATETIME
-    rtc_ht8563_run_configured_tests();
-#endif
-
-#if CONFIG_RTC_HT8563_TEST_ALARM_INT || CONFIG_RTC_HT8563_TEST_TIMER_INT
-    rtc_ht8563_run_configured_tests();
-    ESP_LOGI(TAG, "Aguardando desligamento...");
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // 1. Remove os dispositivos do barramento
-    rtc_ht8563_deinit();
-    oled_deinit();
-
-    // 2. Agora sim encerra o barramento I2C com segurança
-    board_i2c_bus_deinit();
-#endif
-
-    while (1) {
-        
-        ESP_LOGI(TAG, "Hello, World!");
-
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 1 second
+    // 4. Inicializa Fila de Eventos da Aplicação
+    s_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
+    if (s_app_event_queue == NULL) {
+        ESP_LOGE(TAG, "Falha ao criar fila de eventos principal");
+        return;
     }
 
+    // 5. Configuração do Driver Wi-Fi e Handlers de Evento
+    ESP_ERROR_CHECK(board_wifi_init());
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        BOARD_WIFI_EVENTS, ESP_EVENT_ANY_ID, &on_wifi_event_handler, NULL, NULL));
+
+    // 6. Simulação de Leitura da FRAM e Configuração da Rede Dinâmica
+    ESP_ERROR_CHECK(setup_simulated_fram_wifi_credentials());
+
+    // 7. Análise da Causa do Boot (Tarefa 0)
+    boot_event_t boot_cause = EVENT_BOOT_POWER_ON;
+
+    app_event_t initial_evt = {
+        .type = APP_EVENT_BOOT_ANALYZED,
+        .boot_cause = boot_cause
+    };
+    xQueueSend(s_app_event_queue, &initial_evt, portMAX_DELAY);
+
+    // 8. Loop Principal (Máquina de Estados Finita Guiada por Eventos)
+    app_event_t current_evt;
+    while (1) {
+        if (xQueueReceive(s_app_event_queue, &current_evt, portMAX_DELAY) == pdTRUE) {
+            switch (current_evt.type) {
+
+                case APP_EVENT_BOOT_ANALYZED:
+                    ESP_LOGI(TAG, "[FSM] Boot Processado. Iniciando Sequência de Wi-Fi Failover...");
+                    board_wifi_start_failover_connect();
+                    break;
+
+                case APP_EVENT_WIFI_CONNECTED:
+                    ESP_LOGI(TAG, "[FSM] Wi-Fi Conectado com Sucesso!");
+
+                    // Configura a interrupção por Timer do RTC (ex: 10 segundos para teste)
+                    rtc_ht8563_clear_flags();
+                    if (rtc_ht8563_set_timer(10) == ESP_OK) {
+                        ESP_LOGI(TAG, "[RTC] Interrupção por timer de 10s configurada com sucesso!");
+                        app_event_t timer_evt = {.type = APP_EVENT_TIMER_SET_SUCCESS};
+                        xQueueSend(s_app_event_queue, &timer_evt, portMAX_DELAY);
+                    } else {
+                        ESP_LOGE(TAG, "[RTC] Falha ao configurar Timer do RTC!");
+                    }
+                    break;
+
+                case APP_EVENT_WIFI_FAILOVER_EXHAUSTED:
+                    ESP_LOGE(TAG, "[FSM] ERRO: Não foi possível conectar em nenhuma rede Wi-Fi!");
+                    break;
+
+                case APP_EVENT_TIMER_SET_SUCCESS:
+                    ESP_LOGI(TAG, "[FSM] Processo Concluído. Aguardando disparo da interrupção do RTC...");
+                    gpio_set_level(ESP_REG_GPIO, 1);
+                    break;
+
+                default:
+                    ESP_LOGW(TAG, "[FSM] Evento não mapeado recebido: %d", current_evt.type);
+                    break;
+            }
+        }
+    }
 }

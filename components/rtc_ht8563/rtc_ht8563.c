@@ -56,6 +56,7 @@ esp_err_t rtc_ht8563_init(void) {
     }
 
     ESP_LOGI(TAG, "RTC HT8563 inicializado com sucesso (0x%02X)", RTC_I2C_ADDR);
+    rtc_ht8563_write_reg(REG_CTRL2, 0x00);
     return ESP_OK;
 }
 
@@ -139,6 +140,9 @@ esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute) {
 esp_err_t rtc_ht8563_set_timer(uint8_t seconds) {
     uint8_t ctrl2 = 0;
 
+    // 1. Limpa o registrador Control/Status 2 (Desabilita interrupção, limpa flags TF/AF)
+    rtc_ht8563_write_reg(REG_CTRL2, 0x00);
+
     // 1. Disable the timer for configuration
     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x00);
 
@@ -150,10 +154,19 @@ esp_err_t rtc_ht8563_set_timer(uint8_t seconds) {
     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x82);
 
     // 4. No CTRL2: Enable the Timer Interrupt (TIE - Bit 0) and Clear Flag (TF - Bit 2)
-    rtc_ht8563_read_reg(REG_CTRL2, &ctrl2);
-    ctrl2 &= ~(1 << 2); // Zera bit TF (Timer Flag)
-    ctrl2 |= (1 << 0);  // Seta bit TIE (Timer Interrupt Enable)
-    rtc_ht8563_write_reg(REG_CTRL2, ctrl2);
+    // rtc_ht8563_read_reg(REG_CTRL2, &ctrl2);
+    // ctrl2 &= ~(1 << 2); // Zera bit TF (Timer Flag)
+    // ctrl2 |= (1 << 0);  // Seta bit TIE (Timer Interrupt Enable)
+    // rtc_ht8563_write_reg(REG_CTRL2, ctrl2);
+
+    // 4. Habilita a interrupção do Timer no pino INT em MODO PULSO (TI_TP = 1, TIE = 1 -> 0x11)
+    // Bit 4 (TI_TP = 1) gera pulso temporizado no pino INT
+    // Bit 0 (TIE = 1) habilita interrupção do Timer
+    rtc_ht8563_write_reg(REG_CTRL2, 0x11);
+
+    // 5. Habilita o Timer com frequência base de 1 Hz (TE = 1 [bit 7], TD = 10 [bits 1:0])
+    // 0x82 -> 1000 0010 (TE=1, TD1=1, TD0=0 -> Clock de 1 Hz)
+    rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x82);
 
     ESP_LOGI(TAG, "Timer Countdown de %ds configurado no RTC.", seconds);
     return ESP_OK;
