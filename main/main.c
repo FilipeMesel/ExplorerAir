@@ -28,7 +28,15 @@
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
-#define GPIO_POWER_HOLD_PIN 22
+#define GPIO_POWER_HOLD_PIN   GPIO_NUM_22
+#define GPIO_BTN_MENU_SELECT  GPIO_NUM_5
+#define GPIO_BTN_MENU_ENTER   GPIO_NUM_38
+
+#define BUTTON_HOLD_DURATION_MS 2000
+#define BUTTON_POLL_INTERVAL_MS 50
+
+static esp_err_t init_boot_gpios(void);
+static bool check_dual_button_hold(void);
 
 static const char *TAG = "MAIN_APP";
 
@@ -242,8 +250,8 @@ static esp_err_t send_mocked_initial_telemetry(void) {
  */
 static esp_err_t setup_simulated_fram_wifi_credentials(void) {
     wifi_credential_t cred = {0};
-    snprintf(cred.ssid, sizeof(cred.ssid), "VIVOFIBRA-56ED_EXT");
-    snprintf(cred.password, sizeof(cred.password), "72233756ED");
+    snprintf(cred.ssid, sizeof(cred.ssid), "SUA-SENHA");
+    snprintf(cred.password, sizeof(cred.password), "123456789");
 
     ESP_LOGI(TAG, "Dynamic Credential Loaded: SSID='%s'", cred.ssid);
     return board_wifi_set_dynamic_credential(&cred);
@@ -318,12 +326,16 @@ static void app_fsm_task(void *pvParameters) {
     app_event_t current_evt;
 
     // Envia o evento inicial para disparar a sequencia
-    boot_event_t boot_cause = EVENT_BOOT_POWER_ON;
-    app_event_t initial_evt = {
-        .type = APP_EVENT_BOOT_ANALYZED,
-        .boot_cause = boot_cause
-    };
-    xQueueSend(s_app_event_queue, &initial_evt, portMAX_DELAY);
+    boot_event_t boot_cause;
+    
+    // Executa a Análise da Tarefa 0
+    if (analyze_boot_cause(&boot_cause) == ESP_OK) {
+        app_event_t initial_evt = {
+            .type = APP_EVENT_BOOT_ANALYZED,
+            .boot_cause = boot_cause
+        };
+        xQueueSend(s_app_event_queue, &initial_evt, portMAX_DELAY);
+    }
 
     while (1) {
         if (xQueueReceive(s_app_event_queue, &current_evt, portMAX_DELAY) == pdTRUE) {
@@ -388,18 +400,159 @@ static void app_fsm_task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Configures button GPIOs for initial reading during boot.
+ */
+static esp_err_t init_boot_gpios(void) {
+    gpio_config_t btn_config = {
+        .pin_bit_mask = (1ULL << GPIO_BTN_MENU_SELECT) | (1ULL << GPIO_BTN_MENU_ENTER),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    return gpio_config(&btn_config);
+}
+
+/**
+ * @brief Checks if dual buttons (GPIO 5 and GPIO 38) are held for at least 2 seconds.
+ * 
+ * @return true if both buttons are held continuously for 2s, false otherwise.
+ */
+static bool check_dual_button_hold(void) {
+    int elapsed_ms = 0;
+
+    while (elapsed_ms < BUTTON_HOLD_DURATION_MS) {
+        // Active LOW: 0 = Pressionado, 1 = Solto
+        bool btn_select_pressed = (gpio_get_level(GPIO_BTN_MENU_SELECT) == 0);
+        bool btn_enter_pressed  = (gpio_get_level(GPIO_BTN_MENU_ENTER)  == 0);
+
+        // Se QUALQUER UM dos botões for solto durante a contagem, aborta
+        if (btn_select_pressed || btn_enter_pressed) {
+            return false;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_INTERVAL_MS));
+        elapsed_ms += BUTTON_POLL_INTERVAL_MS;
+    }
+
+    return true;
+}
+
+esp_err_t analyze_boot_cause(boot_event_t *out_event) {
+    if (out_event == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Configura os GPIOs dos botões com PULL-UP ativo
+    init_boot_gpios();
+
+    // Avaliação Active LOW (pino == 0 significa PRESSIONADO)
+    bool btn_select_pressed = (gpio_get_level(GPIO_BTN_MENU_SELECT) == 0);
+    bool btn_enter_pressed  = (gpio_get_level(GPIO_BTN_MENU_ENTER)  == 0);
+
+    // 1. Ambas as teclas pressionadas simultaneamente no boot
+    if (!btn_select_pressed && !btn_enter_pressed) {
+        ESP_LOGI(TAG, "Dual buttons detected at boot. Checking 2s hold condition...");
+        if (check_dual_button_hold()) {
+            *out_event = EVENT_WAKEUP_BUTTON_DUAL_HOLD;
+        } else {
+            // Se soltar antes dos 2 segundos, trata como boot normal
+            *out_event = EVENT_BOOT_POWER_ON;
+        }
+    } 
+    // // 2. Apenas o GPIO 38 pressionado (botão capaz de ligar o circuito)
+    // else if (!btn_enter_pressed) {
+    //     ESP_LOGI(TAG, "Single press detected on GPIO 38.");
+    //     *out_event = EVENT_WAKEUP_SINGLE_BUTTON;
+    // } 
+    // // 3. Apenas GPIO 5 pressionado (sem capacidade de ligar por hardware, mas tratado por segurança)
+    // else if (!btn_select_pressed) {
+    //     ESP_LOGI(TAG, "Single press detected on GPIO 5.");
+    //     *out_event = EVENT_WAKEUP_SINGLE_BUTTON;
+    // }
+    // 4. Nenhum botão pressionado: Verificar RTC via I2C
+    else {
+        bool timer_flag = false;  // Periodic Telemetry Flag (TF)
+        bool alarm_flag = false;  // Schedule Alarm Flag (AF)
+
+        esp_err_t ret = rtc_ht8563_get_flags(&timer_flag, &alarm_flag);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read HT8563 RTC flags. Defaulting to Power-On Reset.");
+            *out_event = EVENT_BOOT_POWER_ON;
+            return ret;
+        }
+
+        if (timer_flag && alarm_flag) {
+            *out_event = EVENT_WAKEUP_SCHEDULE_TELEMETRY_CONFLICT;
+        } else if (timer_flag) {
+            *out_event = EVENT_WAKEUP_RTC_TIMER;
+        } else if (alarm_flag) {
+            *out_event = EVENT_WAKEUP_RTC_ALARM;
+        } else {
+            *out_event = EVENT_BOOT_POWER_ON;
+        }
+    }
+
+    // 2. Process Detected Event Action via Switch-Case
+    switch (*out_event) {
+
+        case EVENT_BOOT_POWER_ON:
+            ESP_LOGI(TAG, "[BOOT CAUSE] Hard Reset / Power-On Reset detected.");
+            // TODO: Initialize system defaults, perform RTC sanity check, and check FRAM state.
+            break;
+
+        case EVENT_WAKEUP_BUTTON_DUAL_HOLD:
+            ESP_LOGI(TAG, "[BOOT CAUSE] Dual Button Hold (>= 2s) confirmed. Triggering IR Learn/Test Mode.");
+            // TODO: Initialize OLED display menu with "Aprender" and "Testar" options.
+            break;
+
+        case EVENT_WAKEUP_SINGLE_BUTTON:
+            ESP_LOGI(TAG, "[BOOT CAUSE] GPIO 38 Pressed. Single-Button Wakeup.");
+            // TODO: Turn on OLED screen briefly, show battery status / quick telemetry, and reset sleep timer.
+            break;
+
+        case EVENT_WAKEUP_RTC_TIMER:
+            ESP_LOGI(TAG, "[BOOT CAUSE] RTC Periodic Timer (TF) Triggered.");
+            // TODO: Execute Task 1 (Read action from FRAM), Task 2 (Send MQTT telemetry), and update next wakeup (Task 3).
+            break;
+
+        case EVENT_WAKEUP_RTC_ALARM:
+            ESP_LOGI(TAG, "[BOOT CAUSE] RTC Schedule Alarm (AF) Triggered.");
+            // TODO: Read pending schedule from FRAM, send IR command to Air Conditioner, and send execution log via MQTT.
+            break;
+
+        case EVENT_WAKEUP_SCHEDULE_TELEMETRY_CONFLICT:
+            ESP_LOGW(TAG, "[BOOT CAUSE] Conflict: RTC Timer and Schedule Alarm triggered simultaneously!");
+            // TODO: Execute scheduled IR action first, then immediately package and publish telemetry log via MQTT.
+            break;
+
+        case EVENT_LOW_BATTERY_SHUTDOWN:
+            ESP_LOGE(TAG, "[BOOT CAUSE] Battery critically low! Preparing emergency shutdown.");
+            // TODO: Save state, disable Wi-Fi/MQTT, show "Bateria Fraca" on OLED, and force sleep.
+            break;
+
+        default:
+            ESP_LOGW(TAG, "[BOOT CAUSE] Unknown Wakeup Event: %d", *out_event);
+            // TODO: Fallback handling, log warning to FRAM, and power down safely.
+            break;
+    }
+
+    return ESP_OK;
+}
+
 void app_main(void) {
-    // 1. Create Main Event Queue
+    // 1. Criar a fila de eventos
     s_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
     if (s_app_event_queue == NULL) {
         ESP_LOGE(TAG, "Critical: Failed to create central application event queue");
         return;
     }
 
-    // 2. Initialize Hardware & Peripherals
+    // 2. Inicializar Todo o Hardware (GPIOs, I2C, RTC, etc.) PRIMEIRO!
     ESP_ERROR_CHECK(board_hardware_init());
 
-    // 3. Create Main FSM Task
+    // 3. Criar a tarefa da FSM somente após o hardware estar pronto
     BaseType_t ret = xTaskCreate(
         app_fsm_task,
         "app_fsm_task",

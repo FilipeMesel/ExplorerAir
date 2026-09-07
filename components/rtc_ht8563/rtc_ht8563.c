@@ -56,7 +56,7 @@ esp_err_t rtc_ht8563_init(void) {
     }
 
     ESP_LOGI(TAG, "RTC HT8563 inicializado com sucesso (0x%02X)", RTC_I2C_ADDR);
-    rtc_ht8563_write_reg(REG_CTRL2, 0x00);
+    // rtc_ht8563_write_reg(REG_CTRL2, 0x00);
     return ESP_OK;
 }
 
@@ -193,6 +193,20 @@ void rtc_ht8563_run_test_timer(uint8_t seconds) {
     ESP_LOGI(TAG, "[TESTE 3] Limpando flags e configurando timer de %ds...", seconds);
     rtc_ht8563_clear_flags();
     rtc_ht8563_set_timer(seconds);
+}
+
+esp_err_t rtc_ht8563_get_flags(bool *timer_flag, bool *alarm_flag) {
+    if (!timer_flag || !alarm_flag) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t ctrl2 = 0;
+    esp_err_t ret = rtc_ht8563_read_reg(REG_CTRL2, &ctrl2);
+    if (ret == ESP_OK) {
+        *alarm_flag = (ctrl2 & (1 << 3)) != 0; // Bit 3 = AF
+        *timer_flag = (ctrl2 & (1 << 2)) != 0; // Bit 2 = TF
+    }
+    return ret;
 }
 
 void rtc_ht8563_run_configured_tests(void) {
