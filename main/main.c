@@ -46,28 +46,29 @@ static void force_sleep(void)
     rtc_ht8563_clear_flags();
 
     // 2. Ajusta hora do RTC
-    rtc_date_time_t dt_initial = {
-        .second = 50,
-        .minute = 1,
-        .hour = 0,
-        .day = 1,
-        .weekday = 1,
-        .month = 1,
-        .year = 2026
-    };
+    // rtc_date_time_t dt_initial = {
+    //     .second = 50,
+    //     .minute = 1,
+    //     .hour = 0,
+    //     .day = 1,
+    //     .weekday = 1,
+    //     .month = 1,
+    //     .year = 2026
+    // };
 
-    if (rtc_ht8563_set_time(&dt_initial) == ESP_OK) {
-        ESP_LOGI(TAG, "Hora inicial ajustada para: 00:01:50");
-    } else {
-        ESP_LOGE(TAG, "Falha ao definir hora inicial no RTC");
-    }
+    // if (rtc_ht8563_set_time(&dt_initial) == ESP_OK) {
+    //     ESP_LOGI(TAG, "Hora inicial ajustada para: 00:01:50");
+    // } else {
+    //     ESP_LOGE(TAG, "Falha ao definir hora inicial no RTC");
+    // }
 
-    // 3. Configura alarme do RTC
-    if (rtc_ht8563_set_alarm(0, 2) == ESP_OK) {
-        ESP_LOGI(TAG, "Alarme programado com sucesso para 00:02:00");
-    } else {
-        ESP_LOGE(TAG, "Falha ao configurar alarme no RTC");
-    }
+    // // 3. Configura alarme do RTC
+    // if (rtc_ht8563_set_alarm(0, 2) == ESP_OK) {
+    //     ESP_LOGI(TAG, "Alarme programado com sucesso para 00:02:00");
+    // } else {
+    //     ESP_LOGE(TAG, "Falha ao configurar alarme no RTC");
+    // }
+    rtc_ht8563_set_timer(10);
     //END TEST
 
     // 2. Parada dos periféricos de rede
