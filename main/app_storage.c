@@ -79,3 +79,42 @@ esp_err_t app_storage_get_wifi_credentials(wifi_credentials_t *creds) {
 
     return ESP_OK;
 }
+
+esp_err_t app_storage_save_schedule(const schedule_payload_t *schedule) {
+    if (!schedule || schedule->schedule_id >= MAX_SCHEDULE_ITEMS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t offset = FRAM_ADDR_SCHEDULE_TABLE + (schedule->schedule_id * sizeof(schedule_payload_t));
+    esp_err_t ret = fram_write(offset, (const uint8_t *)schedule, sizeof(schedule_payload_t));
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Agendamento ID %d salvo na FRAM (week_days: %d, time: %s, action: %d)",
+                 schedule->schedule_id, schedule->week_days, schedule->time, schedule->action);
+    } else {
+        ESP_LOGE(TAG, "Falha ao gravar agendamento ID %d na FRAM", schedule->schedule_id);
+    }
+    return ret;
+}
+
+esp_err_t app_storage_get_schedule(uint8_t schedule_id, schedule_payload_t *out_schedule) {
+    if (!out_schedule || schedule_id >= MAX_SCHEDULE_ITEMS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t offset = FRAM_ADDR_SCHEDULE_TABLE + (schedule_id * sizeof(schedule_payload_t));
+    esp_err_t ret = fram_read(offset, (uint8_t *)out_schedule, sizeof(schedule_payload_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler agendamento ID %d na FRAM", schedule_id);
+    }
+    return ret;
+}
+
+esp_err_t app_storage_save_wakeup_context(const wakeup_context_t *ctx) {
+    if (!ctx) return ESP_ERR_INVALID_ARG;
+    return fram_write(FRAM_ADDR_WAKEUP_CONTEXT, (const uint8_t *)ctx, sizeof(wakeup_context_t));
+}
+
+esp_err_t app_storage_get_wakeup_context(wakeup_context_t *ctx) {
+    if (!ctx) return ESP_ERR_INVALID_ARG;
+    return fram_read(FRAM_ADDR_WAKEUP_CONTEXT, (uint8_t *)ctx, sizeof(wakeup_context_t));
+}

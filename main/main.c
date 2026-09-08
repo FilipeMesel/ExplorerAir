@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -30,6 +31,7 @@
 
 static esp_err_t init_boot_gpios(void);
 static bool check_dual_button_hold(void);
+static void force_sleep(void);
 
 static const char *TAG = "MAIN_APP";
 
@@ -38,7 +40,9 @@ static QueueHandle_t s_app_event_queue = NULL;
 
 static void force_sleep(void)
 {
-    // 1. Limpa flags residuais do RTC
+    // 1. Calcula o próximo evento (Telemetria vs Schedule) e seta o alarme AF no RTC HT8563
+    // power_manager_schedule_next_wakeup();
+    // TEST BEGIN
     rtc_ht8563_clear_flags();
 
     // 2. Ajusta hora do RTC
@@ -64,15 +68,162 @@ static void force_sleep(void)
     } else {
         ESP_LOGE(TAG, "Falha ao configurar alarme no RTC");
     }
+    //END TEST
 
-    // 4. Parada dos periféricos de rede
+    // 2. Parada dos periféricos de rede
     board_mqtt_stop();
     board_wifi_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // 5. Corta a energia acionando o pino do LDO/Regulador
+    // 3. Corta a energia do circuito
     ESP_LOGI(TAG, "Desligando alimentação via GPIO_POWER_HOLD_PIN...");
     gpio_set_level(GPIO_POWER_HOLD_PIN, 1);
+}
+
+/**
+ * @brief Converte rtc_date_time_t para epoch time_t em segundos para cálculos
+ */
+static time_t rtc_to_epoch(const rtc_date_time_t *dt) {
+    struct tm t = {
+        .tm_sec  = dt->second,
+        .tm_min  = dt->minute,
+        .tm_hour = dt->hour,
+        .tm_mday = dt->day,
+        .tm_mon  = dt->month - 1,
+        .tm_year = dt->year - 1900,
+        .tm_isdst = -1
+    };
+    return mktime(&t);
+}
+
+/**
+ * @brief Converte epoch time_t de volta para rtc_date_time_t
+ */
+static void epoch_to_rtc(time_t epoch, rtc_date_time_t *dt) {
+    struct tm t;
+    localtime_r(&epoch, &t);
+    dt->second  = (uint8_t)t.tm_sec;
+    dt->minute  = (uint8_t)t.tm_min;
+    dt->hour    = (uint8_t)t.tm_hour;
+    dt->day     = (uint8_t)t.tm_mday;
+    dt->month   = (uint8_t)(t.tm_mon + 1);
+    dt->year    = (uint16_t)(t.tm_year + 1900);
+    dt->weekday = (uint8_t)t.tm_wday; // 0 = Domingo
+}
+
+/**
+ * @brief Converte string "HH:MM" em minutos do dia (0 a 1439)
+ */
+static int time_str_to_minutes(const char *time_str) {
+    int h = 0, m = 0;
+    if (sscanf(time_str, "%d:%d", &h, &m) == 2) {
+        return h * 60 + m;
+    }
+    return -1;
+}
+
+esp_err_t power_manager_schedule_next_wakeup(void) {
+    rtc_date_time_t current_dt;
+    esp_err_t err = rtc_ht8563_get_time(&current_dt);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao obter horário atual do RTC para cálculo de próximo wakeup.");
+        return err;
+    }
+
+    uint16_t telemetry_interval_sec = 300; // Default 5 min
+    app_storage_get_telemetry_interval(&telemetry_interval_sec);
+
+    time_t now_epoch = rtc_to_epoch(&current_dt);
+    time_t telemetry_target_epoch = now_epoch + telemetry_interval_sec;
+
+    // Busca o agendamento ativo mais próximo nos próximos 7 dias
+    time_t closest_schedule_epoch = 0;
+    schedule_payload_t closest_schedule = {0};
+    bool found_valid_schedule = false;
+
+    // Varrer todos os 11 slots de agendamento na FRAM
+    for (uint8_t id = 0; id < MAX_SCHEDULE_ITEMS; id++) {
+        schedule_payload_t sched;
+        if (app_storage_get_schedule(id, &sched) != ESP_OK) {
+            continue;
+        }
+
+        // Bit 0 = Enable Flag (1 = Habilitado, 0 = Desabilitado/Salvo Apenas)
+        if ((sched.week_days & 0x01) == 0) {
+            continue; // Agendamento desativado
+        }
+
+        int sched_min = time_str_to_minutes(sched.time);
+        if (sched_min < 0) continue;
+
+        // Varrer os próximos 7 dias para encontrar a ocorrência válida mais próxima
+        for (int day_offset = 0; day_offset < 7; day_offset++) {
+            // Recalcula o dia para validar a máscara de bits
+            time_t candidate_day_epoch = now_epoch + (day_offset * 86400);
+            struct tm tm_candidate;
+            localtime_r(&candidate_day_epoch, &tm_candidate);
+
+            // bit1: Dom, bit2: Seg, bit3: Ter, bit4: Qua, bit5: Qui, bit6: Sex, bit7: Sáb
+            uint8_t day_bit = 1 << (tm_candidate.tm_wday + 1);
+
+            if (sched.week_days & day_bit) {
+                // Calcula epoch exato para este dia na hora do agendamento
+                tm_candidate.tm_hour = sched_min / 60;
+                tm_candidate.tm_min  = sched_min % 60;
+                tm_candidate.tm_sec  = 0;
+
+                time_t candidate_epoch = mktime(&tm_candidate);
+
+                // O agendamento precisa ser no futuro (pelo menos +5 segundos)
+                if (candidate_epoch > (now_epoch + 5)) {
+                    if (!found_valid_schedule || candidate_epoch < closest_schedule_epoch) {
+                        closest_schedule_epoch = candidate_epoch;
+                        closest_schedule = sched;
+                        found_valid_schedule = true;
+                    }
+                    break; // Encontrou a menor ocorrência deste agendamento específico
+                }
+            }
+        }
+    }
+
+    // Avalia o menor tempo entre Telemetria e Agendamento (ou conflito)
+    time_t final_target_epoch;
+    wakeup_context_t wakeup_ctx = {0};
+
+    // Caso de Conflito ou Agendamento mais próximo que Telemetria
+    if (found_valid_schedule && (closest_schedule_epoch <= telemetry_target_epoch)) {
+        final_target_epoch = closest_schedule_epoch;
+        wakeup_ctx.reason = WAKEUP_REASON_SCHEDULE;
+        wakeup_ctx.schedule_id = closest_schedule.schedule_id;
+        wakeup_ctx.pending_action = closest_schedule.action;
+
+        ESP_LOGI(TAG, "[ALVO: AGENDAMENTO] ID=%d programado para daqui a %ld s (Ação=%d)",
+                 closest_schedule.schedule_id, (long)(final_target_epoch - now_epoch), closest_schedule.action);
+    } else {
+        final_target_epoch = telemetry_target_epoch;
+        wakeup_ctx.reason = WAKEUP_REASON_TELEMETRY;
+        wakeup_ctx.schedule_id = 0xFF;
+        wakeup_ctx.pending_action = LAST_ACTION_NONE;
+
+        ESP_LOGI(TAG, "[ALVO: TELEMETRIA] Programado para daqui a %d s", telemetry_interval_sec);
+    }
+
+    // Persiste a decisão na FRAM para uso na próxima inicialização
+    app_storage_save_wakeup_context(&wakeup_ctx);
+
+    // Ajusta o alarme no RTC usando a estrutura de data/hora
+    rtc_date_time_t target_dt;
+    epoch_to_rtc(final_target_epoch, &target_dt);
+
+    err = rtc_ht8563_set_alarm(target_dt.hour, target_dt.minute);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Alarme AF configurado no RTC com sucesso para %02d:%02d", target_dt.hour, target_dt.minute);
+    } else {
+        ESP_LOGE(TAG, "Erro ao configurar alarme no RTC HT8563");
+    }
+
+    return err;
 }
 
 /**
@@ -168,7 +319,22 @@ static void process_incoming_mqtt_command(const char *payload) {
 
         case CMD_ID_SCHEDULE_PROV: // CMD 6
             ESP_LOGI(TAG, "[MQTT RX] Command 6 Received: Schedule Provisioning");
-            // TODO: Decode payload with and update FRAM Schedule table
+            {
+                schedule_payload_t sched_payload;
+                if (json_decode_schedule(payload, &sched_payload) == ESP_OK) {
+                    // 1. Salva a regra de agendamento na FRAM no ID correspondente (0-10)
+                    if (app_storage_save_schedule(&sched_payload) == ESP_OK) {
+                        // 2. Monta e responde a confirmação de recebimento (CMD 7 - ACK)
+                        char tx_ack_buf[256];
+                        if (json_encode_schedule_ack(&sched_payload, tx_ack_buf, sizeof(tx_ack_buf)) == ESP_OK) {
+                            board_mqtt_publish_uplink(tx_ack_buf, 1);
+                            ESP_LOGI(TAG, "[MQTT TX] CMD 7 (Schedule ACK) enviado: %s", tx_ack_buf);
+                        }
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Falha ao decodificar agendamento do CMD 6");
+                }
+            }
             break;
 
         case CMD_ID_SET_IR_RAW_DATA: // CMD 8
@@ -481,6 +647,64 @@ static bool check_dual_button_hold(void) {
     return true;
 }
 
+// Função auxiliar para recuperar a ação/agendamento salvo da FRAM
+static esp_err_t execute_pending_fram_action(void) {
+    wakeup_context_t wakeup_ctx = {0};
+    
+    esp_err_t err = app_storage_get_wakeup_context(&wakeup_ctx);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler contexto de wakeup da FRAM: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Contexto recuperado da FRAM - Razao: %d, ID: %d, Action Enum: %d", 
+             wakeup_ctx.reason, wakeup_ctx.schedule_id, wakeup_ctx.pending_action);
+    
+    switch (wakeup_ctx.pending_action) {
+        case LAST_ACTION_NONE:
+            ESP_LOGI(TAG, "Nenhuma acao IR pendente (Apenas Telemetria).");
+            break;
+        case LAST_ACTION_LEARNED_ACK:
+            ESP_LOGI(TAG, "Acao: LAST_ACTION_LEARNED_ACK");
+            break;
+        case ACTION_POWER_OFF:
+            ESP_LOGI(TAG, "Acao: ACTION_POWER_OFF");
+            break;
+        case ACTION_POWER_ON:
+            ESP_LOGI(TAG, "Acao: ACTION_POWER_ON");
+            break;
+        case ACTION_SET_TEMP_18:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_18");
+            break;
+        case ACTION_SET_TEMP_19:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_19");
+            break;
+        case ACTION_SET_TEMP_20:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_20");
+            break;
+        case ACTION_SET_TEMP_21:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_21");
+            break;
+        case ACTION_SET_TEMP_22:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_22");
+            break;
+        case ACTION_SET_TEMP_23:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_23");
+            break;
+        case ACTION_SET_TEMP_24:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_24");
+            break;
+        case ACTION_SET_TEMP_25:
+            ESP_LOGI(TAG, "Acao: ACTION_SET_TEMP_25");
+            break;
+        default:
+            ESP_LOGW(TAG, "Acao IR desconhecida: %d", wakeup_ctx.pending_action);
+            break;
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t analyze_boot_cause(boot_event_t *out_event) {
     if (out_event == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -529,9 +753,17 @@ esp_err_t analyze_boot_cause(boot_event_t *out_event) {
     // 3. Process Detected Event Action via Switch-Case
     switch (*out_event) {
 
+        case EVENT_WAKEUP_SCHEDULE_TELEMETRY_CONFLICT:
+        case EVENT_WAKEUP_RTC_ALARM:
+        case EVENT_WAKEUP_RTC_TIMER:
+        case EVENT_WAKEUP_SINGLE_BUTTON:
         case EVENT_BOOT_POWER_ON:
-            ESP_LOGI(TAG, "[BOOT CAUSE] Hard Reset / Power-On Reset detected.");
+        case EVENT_LOW_BATTERY_SHUTDOWN:
+        {
+            ESP_LOGI(TAG, "[BOOT CAUSE] Hard Reset / Power-On Reset or RTC detected.");
             // TODO: Initialize system defaults, perform RTC sanity check, and check FRAM state.
+            execute_pending_fram_action();
+        }
             break;
 
         case EVENT_WAKEUP_BUTTON_DUAL_HOLD:
@@ -539,34 +771,8 @@ esp_err_t analyze_boot_cause(boot_event_t *out_event) {
             // TODO: Initialize OLED display menu with "Aprender" and "Testar" options.
             break;
 
-        case EVENT_WAKEUP_SINGLE_BUTTON:
-            ESP_LOGI(TAG, "[BOOT CAUSE] GPIO 38 Pressed. Single-Button Wakeup.");
-            // TODO: Turn on OLED screen briefly, show battery status / quick telemetry, and reset sleep timer.
-            break;
-
-        case EVENT_WAKEUP_RTC_TIMER:
-            ESP_LOGI(TAG, "[BOOT CAUSE] RTC Periodic Timer (TF) Triggered.");
-            // TODO: Execute Task 1 (Read action from FRAM), Task 2 (Send MQTT telemetry), and update next wakeup (Task 3).
-            break;
-
-        case EVENT_WAKEUP_RTC_ALARM:
-            ESP_LOGI(TAG, "[BOOT CAUSE] RTC Schedule Alarm (AF) Triggered.");
-            // TODO: Read pending schedule from FRAM, send IR command to Air Conditioner, and send execution log via MQTT.
-            break;
-
-        case EVENT_WAKEUP_SCHEDULE_TELEMETRY_CONFLICT:
-            ESP_LOGW(TAG, "[BOOT CAUSE] Conflict: RTC Timer and Schedule Alarm triggered simultaneously!");
-            // TODO: Execute scheduled IR action first, then immediately package and publish telemetry log via MQTT.
-            break;
-
-        case EVENT_LOW_BATTERY_SHUTDOWN:
-            ESP_LOGE(TAG, "[BOOT CAUSE] Battery critically low! Preparing emergency shutdown.");
-            // TODO: Save state, disable Wi-Fi/MQTT, show "Bateria Fraca" on OLED, and force sleep.
-            break;
-
         default:
-            ESP_LOGW(TAG, "[BOOT CAUSE] Unknown Wakeup Event: %d", *out_event);
-            // TODO: Fallback handling, log warning to FRAM, and power down safely.
+            ESP_LOGW(TAG, "[BOOT CAUSE] Evento de boot nao mapeado: %d", *out_event);
             break;
     }
 

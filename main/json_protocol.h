@@ -64,6 +64,25 @@ esp_err_t json_decode_wifi_prov(const char *json_str, wifi_prov_payload_t *out_p
  */
 esp_err_t json_encode_wifi_ack(const wifi_prov_payload_t *payload, char *pub_buf, size_t max_len);
 
+/**
+ * @brief Decodifica o payload JSON do CMD 6 (Schedule Provisioning).
+ * 
+ * @param json_str String JSON recebida via MQTT Downlink.
+ * @param out_payload Ponteiro para a estrutura que receberá o agendamento decodificado.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t json_decode_schedule(const char *json_str, schedule_payload_t *out_payload);
+
+/**
+ * @brief Codifica o payload JSON do CMD 7 (Schedule ACK).
+ * 
+ * @param payload Estrutura contendo os dados do agendamento a serem confirmados.
+ * @param pub_buf Buffer de saída para a string JSON.
+ * @param max_len Tamanho máximo do buffer de saída.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t json_encode_schedule_ack(const schedule_payload_t *payload, char *pub_buf, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -10,6 +10,8 @@
 #define FRAM_ADDR_SYS_CONFIG    0x0000 // Configurações do sistema (Intervalo de Telemetria, etc.)
 #define FRAM_ADDR_RESERVED      0x0020 // Reservado para Wi-Fi/MQTT
 #define FRAM_ADDR_WIFI_CREDENTIALS 0x0020 /**< Localização das credenciais Wi-Fi do cliente (97 bytes) */
+#define FRAM_ADDR_SCHEDULE_TABLE 0x0100 /**< Início da tabela de agendamentos (11 * sizeof(schedule_payload_t)) */
+#define FRAM_ADDR_WAKEUP_CONTEXT   0x0200 /**< Endereço reservado para o contexto do próximo wakeup */
 
 /**
  * @brief Inicializa o módulo de armazenamento.
@@ -46,5 +48,25 @@ esp_err_t app_storage_save_wifi_credentials(const wifi_credentials_t *creds);
  * @return esp_err_t ESP_OK se carregado e válido, ESP_ERR_NOT_FOUND se não houver credencial salva.
  */
 esp_err_t app_storage_get_wifi_credentials(wifi_credentials_t *creds);
+
+/**
+ * @brief Salva ou atualiza um agendamento específico no índice schedule_id na FRAM.
+ * 
+ * @param schedule Ponteiro para a estrutura com os dados do agendamento.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t app_storage_save_schedule(const schedule_payload_t *schedule);
+
+/**
+ * @brief Lê um agendamento específico armazenado na FRAM pelo seu ID (0 a 10).
+ * 
+ * @param schedule_id ID do agendamento a ser lido.
+ * @param out_schedule Ponteiro onde os dados serão armazenados.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t app_storage_get_schedule(uint8_t schedule_id, schedule_payload_t *out_schedule);
+
+esp_err_t app_storage_save_wakeup_context(const wakeup_context_t *ctx);
+esp_err_t app_storage_get_wakeup_context(wakeup_context_t *ctx);
 
 #endif // APP_STORAGE_H

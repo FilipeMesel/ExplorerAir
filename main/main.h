@@ -66,6 +66,15 @@ typedef struct {
  */
 esp_err_t analyze_boot_cause(boot_event_t *out_event);
 
+/**
+ * @brief Avalia agendamentos e intervalo de telemetria para calcular e programar o próximo alarme no RTC.
+ * 
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t power_manager_schedule_next_wakeup(void);
+
+static esp_err_t execute_pending_fram_action(void);
+
 #ifdef __cplusplus
 }
 #endif
