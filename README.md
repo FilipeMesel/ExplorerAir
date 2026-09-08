@@ -51,7 +51,7 @@ A high-reliability, ultra-low-power IoT firmware for smart air conditioner contr
 
 ## 📐 Component Architecture
 
-The project enforces strict modularity. Components isolate peripheral implementations and expose clean contracts.
+The project enforces strict modularity. Peripherals and hardware busses are encapsulated as independent components, while data models, storage layouts, and application orchestration live inside the primary application module (`main`).
 
 ```text
 explorerAirConditioner/
@@ -59,15 +59,25 @@ explorerAirConditioner/
 │   ├── board_i2c_bus/        # Centralized I2C Bus Manager (Shared between RTC & Display)
 │   ├── board_spi_bus/        # SPI Bus Manager (Dedicated for FRAM Interface)
 │   ├── rtc_ht8563/           # HT8563ARZ RTC Driver (BCD, Alarm, Timer, INT Flags)
-│   ├── fram_mb85rs512t/      # MB85RS512T SPI FRAM Manager (Memory offsets & Ring Buffer)
+│   ├── fram_mb85rs512t/      # MB85RS512T SPI FRAM Low-Level Driver (Pure Read/Write Byte Operations)
 │   ├── ir_remote/            # RMT Transceiver for RAW Infrared waveforms
 │   ├── display_oled/         # OLED Display Controller & Português UI Menu Flow
 │   ├── board_wifi/           # Wi-Fi Manager with Primary/Fallback Network Failover Engine
-│   ├── board_mqtt/           # Dynamic MAC-based MQTT Client Wrapper & Event-Driven Engine
-│   └── json_protocol/        # cJSON Encoders & Parsers for MQTT Uplink/Downlink Payload
+│   └── board_mqtt/           # Dynamic MAC-based MQTT Client Wrapper & Event-Driven Engine
 └── main/
-    └── main.c                # Business Logic Engine (Tasks 0 to 3, Schedule Evaluator), System Entry Point & Task Scheduler
+    ├── app_structs.h         # Compact C Structs, Packed Enums & Unifying Data Types
+    ├── app_storage.h         # FRAM Static Memory Layout Offsets & Storage Service API
+    ├── app_storage.c         # High-level Storage Abstraction (Schedules, IR Raw Slots, Telemetry Ring Buffer)
+    ├── json_protocol.h       # Lightweight Encoders & Parsers for MQTT Uplink/Downlink Payloads (header)
+    ├── json_protocol.c       # Lightweight Encoders & Parsers for MQTT Uplink/Downlink Payloads (source)
+    └── main.c                # System Entry Point, Deep Sleep Lifecycle & Business Logic Execution Engine
 ```
+
+**Key Architectural Separation**
+
+* Low-Level Hardware Drivers (components/): The fram_mb85rs512t driver is strictly responsible for SPI raw byte communication, free from protocol or business logic.
+* Data Definitions (main/app_structs.h): Defines packed C structures (e.g., schedule_item_t, telemetry_data_t) to optimize RAM footprint and ensure zero heap overhead during JSON parsing.
+* Storage Abstraction (main/app_storage): Maps the 64KB FRAM memory regions, handling ring-buffer indexes, schedule slots, and IR raw wave storage.
 
 ## Operational Sequence & Execution Lifecycle
 

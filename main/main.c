@@ -17,13 +17,6 @@
 #include "sdkconfig.h"
 
 #include "main.h"
-#include "fram_mb85rs512t.h"
-#include "board_i2c_bus.h"
-#include "rtc_ht8563.h"
-#include "display_oled.h"
-#include "board_wifi.h"
-#include "board_mqtt.h"
-#include "json_protocol.h"
 
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
@@ -39,28 +32,6 @@ static esp_err_t init_boot_gpios(void);
 static bool check_dual_button_hold(void);
 
 static const char *TAG = "MAIN_APP";
-
-/**
- * @brief System Unified Application Events for Main Central Queue
- */
-typedef enum {
-    APP_EVENT_BOOT_ANALYZED,
-    APP_EVENT_WIFI_CONNECTED,
-    APP_EVENT_WIFI_FAILOVER_EXHAUSTED,
-    APP_EVENT_MQTT_CONNECTED,
-    APP_EVENT_MQTT_DISCONNECTED,
-    APP_EVENT_MQTT_DATA_RECEIVED,
-    APP_EVENT_TIMER_SET_SUCCESS,
-    APP_EVENT_SHUTDOWN_REQUESTED
-} app_event_type_t;
-
-
-// 2. Definir a struct do evento que faltava
-typedef struct {
-    app_event_type_t type;
-    boot_event_t boot_cause;
-    board_mqtt_data_t mqtt_data; // <--- Alterado de board_mqtt_event_data_t para board_mqtt_data_t
-} app_event_t;
 
 // 3. Declarar a fila global
 static QueueHandle_t s_app_event_queue = NULL;
@@ -125,7 +96,43 @@ static void process_incoming_mqtt_command(const char *payload) {
     switch (cmd_id) {
         case CMD_ID_RTC_SYNC: // CMD 1
             ESP_LOGI(TAG, "[MQTT RX] Command 1 Received: Telemetry Ack / RTC Sync Payload");
-            // TODO: Decode payload with json_decode_cmd1_rtc_sync and update RTC / Timer interval
+            {
+                cmd1_sync_data_t sync_data;
+                if (json_decode_sync(payload, &sync_data) == ESP_OK)
+                {
+                    // 1. Atualizar o RTC HT8563 com os dados recebidos
+                    rtc_date_time_t dt = {
+                        .hour = (uint8_t)sync_data.sync_time_t.hour,
+                        .minute = (uint8_t)sync_data.sync_time_t.minute,
+                        .second = (uint8_t)sync_data.sync_time_t.second,
+                        .weekday = (uint8_t)sync_data.sync_time_t.weekday,
+                        .day = (uint8_t)sync_data.sync_time_t.day, // Manter valores padrão se não fornecidos no CMD 1
+                        .month = (uint8_t)sync_data.sync_time_t.month,
+                        .year = (uint16_t)sync_data.sync_time_t.year};
+
+                    if (rtc_ht8563_set_time(&dt) == ESP_OK)
+                    {
+                        ESP_LOGI(TAG, "RTC atualizado com sucesso via CMD 1: %02d:%02d:%02d",
+                                 dt.hour, dt.minute, dt.second);
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Falha ao atualizar hora no RTC");
+                    }
+
+                    // 2. Salvar o novo intervalo de telemetria na FRAM
+                    app_storage_save_telemetry_interval((uint16_t)sync_data.telemetry_update);
+
+                    // 3. Notificar a FSM que o timer foi atualizado para prosseguir com o encerramento
+                    app_event_t evt = {
+                        .type = APP_EVENT_TIMER_SET_SUCCESS};
+                    xQueueSend(s_app_event_queue, &evt, portMAX_DELAY);
+                }
+                else
+                {
+                    ESP_LOGE(TAG, "Erro ao decodificar JSON do CMD 1");
+                }
+            }
             break;
 
         case CMD_ID_GET_IR_LEARNED: // CMD 2
@@ -135,18 +142,18 @@ static void process_incoming_mqtt_command(const char *payload) {
 
         case CMD_ID_WIFI_PROV: // CMD 4
             ESP_LOGI(TAG, "[MQTT RX] Command 4 Received: Wi-Fi Credentials Provisioning");
-            // TODO: Decode payload with json_decode_cmd4_wifi_prov and save to FRAM
+            // TODO: Decode payload and save to FRAM
             break;
 
         case CMD_ID_SCHEDULE_PROV: // CMD 6
             ESP_LOGI(TAG, "[MQTT RX] Command 6 Received: Schedule Provisioning");
-            // TODO: Decode payload with json_decode_cmd6_schedule and update FRAM Schedule table
+            // TODO: Decode payload with and update FRAM Schedule table
             break;
 
         case CMD_ID_SET_IR_RAW_DATA: // CMD 8
             {
             ESP_LOGI(TAG, "[MQTT RX] Command 8 Received: Set IR Raw Data Payload");
-            // TODO: Decode payload with json_decode_cmd8_ir_raw and write waveforms to FRAM
+            // TODO: Decode payload with and write waveforms to FRAM
 
             // Em vez de chamar force_sleep() diretamente:
             app_event_t evt = {
@@ -207,42 +214,36 @@ static void on_mqtt_event_handler(void *handler_arg, esp_event_base_t base, int3
 static esp_err_t send_mocked_initial_telemetry(void) {
     ESP_LOGI(TAG, "Constructing CMD 0 (Initial Telemetry) with mocked data...");
 
-    // Mocked sensor readings and state
-    int mocked_temp = 24;
-    int mocked_humidity = 60;
-    const char *mocked_rtc_time = "10:00";
-    const char *mocked_rssi = "-65";
-    float mocked_battery = 3.7f;
-    last_action_t mocked_action = ACTION_TELEMETRY; // 0 = Telemetry
+    // 1. Preenche a estrutura de telemetria com dados mockados
+    telemetry_data_t mock_telemetry = {
+        .temp = 24,                      // 24 °C
+        .umid = 58,                      // 58% de umidade
+        .hour = 14,                      // 14h
+        .minute = 30,                    // 30m
+        .rssi = -65,                     // -65 dBm
+        .battery_mv = 3700,              // 3.7 V (3700 mV)
+        .last_action = ACTION_SET_TEMP_24
+    };
 
-    char *json_payload = build_telemetry_json(
-        mocked_temp,
-        mocked_humidity,
-        mocked_rtc_time,
-        mocked_rssi,
-        mocked_battery,
-        mocked_action
-    );
+    // 2. Buffer para armazenar a payload JSON formatada
+    char json_buffer[256];
+    esp_err_t err = json_encode_telemetry(&mock_telemetry, json_buffer, sizeof(json_buffer));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao codificar JSON de telemetria: %s", esp_err_to_name(err));
+        return err;
+    }
 
-    if (json_payload == NULL) {
-        ESP_LOGE(TAG, "Failed to build JSON payload for CMD 0");
+    ESP_LOGI(TAG, "Payload gerada: %s", json_buffer);
+
+    // 3. Publica a payload via MQTT no tópico configurado
+    err = board_mqtt_publish_uplink(json_buffer, 1);
+    if (err == -1) {
+        ESP_LOGE(TAG, "Falha ao publicar telemetria via MQTT: %s", esp_err_to_name(err));
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Publishing Initial Telemetry Payload:\n%s", json_payload);
-    esp_err_t err = board_mqtt_publish_uplink(json_payload, 1);
-
-    // Free memory allocated by build_telemetry_json (cJSON)
-    free(json_payload);
-    if(err != -1) 
-    {
-        err = ESP_OK;
-    }
-    else
-    {
-        return ESP_FAIL;
-    }
-    return err;
+    ESP_LOGI(TAG, "Telemetria CMD 0 enviada com sucesso!");
+    return ESP_OK;
 }
 
 /**
@@ -250,8 +251,8 @@ static esp_err_t send_mocked_initial_telemetry(void) {
  */
 static esp_err_t setup_simulated_fram_wifi_credentials(void) {
     wifi_credential_t cred = {0};
-    snprintf(cred.ssid, sizeof(cred.ssid), "SUA-SENHA");
-    snprintf(cred.password, sizeof(cred.password), "123456789");
+    snprintf(cred.ssid, sizeof(cred.ssid), "VIVOFIBRA-56ED_EXT");
+    snprintf(cred.password, sizeof(cred.password), "72233756ED");
 
     ESP_LOGI(TAG, "Dynamic Credential Loaded: SSID='%s'", cred.ssid);
     return board_wifi_set_dynamic_credential(&cred);
@@ -292,10 +293,7 @@ static esp_err_t board_hardware_init(void) {
     ret = rtc_ht8563_init();
     if (ret != ESP_OK) return ret;
 
-    ret = fram_init();
-    if (ret != ESP_OK) return ret;
-
-    ret = fram_ring_init();
+    ret = app_storage_init();
     if (ret != ESP_OK) return ret;
 
     ret = oled_init(OLED_I2C_ADDR_DEFAULT);
@@ -385,6 +383,7 @@ static void app_fsm_task(void *pvParameters) {
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
                     ESP_LOGI(TAG, "[FSM] Sequence Completed. Powering down circuit...");
+                    force_sleep();
                     break;
 
                 case APP_EVENT_SHUTDOWN_REQUESTED:
@@ -461,17 +460,7 @@ esp_err_t analyze_boot_cause(boot_event_t *out_event) {
             *out_event = EVENT_BOOT_POWER_ON;
         }
     } 
-    // // 2. Apenas o GPIO 38 pressionado (botão capaz de ligar o circuito)
-    // else if (!btn_enter_pressed) {
-    //     ESP_LOGI(TAG, "Single press detected on GPIO 38.");
-    //     *out_event = EVENT_WAKEUP_SINGLE_BUTTON;
-    // } 
-    // // 3. Apenas GPIO 5 pressionado (sem capacidade de ligar por hardware, mas tratado por segurança)
-    // else if (!btn_select_pressed) {
-    //     ESP_LOGI(TAG, "Single press detected on GPIO 5.");
-    //     *out_event = EVENT_WAKEUP_SINGLE_BUTTON;
-    // }
-    // 4. Nenhum botão pressionado: Verificar RTC via I2C
+    // 2. Nenhum botão pressionado: Verificar RTC via I2C
     else {
         bool timer_flag = false;  // Periodic Telemetry Flag (TF)
         bool alarm_flag = false;  // Schedule Alarm Flag (AF)
@@ -494,7 +483,7 @@ esp_err_t analyze_boot_cause(boot_event_t *out_event) {
         }
     }
 
-    // 2. Process Detected Event Action via Switch-Case
+    // 3. Process Detected Event Action via Switch-Case
     switch (*out_event) {
 
         case EVENT_BOOT_POWER_ON:

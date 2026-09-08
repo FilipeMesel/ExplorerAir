@@ -1,13 +1,22 @@
-/**
- * @file main_boot.h
- * @brief Analysis and identification of system wakeup causes (Task 0).
- */
-
 #ifndef MAIN_BOOT_H
 #define MAIN_BOOT_H
 
 #include "esp_err.h"
 #include <stdbool.h>
+
+// 1. Tipos e Estruturas da Aplicação
+#include "app_structs.h"
+
+// 2. Drivers e Periféricos
+#include "board_i2c_bus.h"
+#include "rtc_ht8563.h"
+#include "display_oled.h"
+#include "board_wifi.h"
+#include "board_mqtt.h"
+
+// 3. Módulos Dependentes dos Tipos Globais
+#include "app_storage.h"
+#include "json_protocol.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +34,29 @@ typedef enum {
     EVENT_WAKEUP_SINGLE_BUTTON,                 /**< Single button press for quick screen status */
     EVENT_LOW_BATTERY_SHUTDOWN                 /**< Battery level below critical threshold */
 } boot_event_t;
+
+/**
+ * @brief System Unified Application Events for Main Central Queue
+ */
+typedef enum {
+    APP_EVENT_BOOT_ANALYZED,
+    APP_EVENT_WIFI_CONNECTED,
+    APP_EVENT_WIFI_FAILOVER_EXHAUSTED,
+    APP_EVENT_MQTT_CONNECTED,
+    APP_EVENT_MQTT_DISCONNECTED,
+    APP_EVENT_MQTT_DATA_RECEIVED,
+    APP_EVENT_TIMER_SET_SUCCESS,
+    APP_EVENT_SHUTDOWN_REQUESTED
+} app_event_type_t;
+
+
+// 2. Definir a struct do evento que faltava
+typedef struct {
+    app_event_type_t type;
+    boot_event_t boot_cause;
+    board_mqtt_data_t mqtt_data; // <--- Alterado de board_mqtt_event_data_t para board_mqtt_data_t
+} app_event_t;
+
 
 /**
  * @brief Initializes boot analysis pins and determines the current wakeup event.
