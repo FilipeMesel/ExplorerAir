@@ -142,7 +142,28 @@ static void process_incoming_mqtt_command(const char *payload) {
 
         case CMD_ID_WIFI_PROV: // CMD 4
             ESP_LOGI(TAG, "[MQTT RX] Command 4 Received: Wi-Fi Credentials Provisioning");
-            // TODO: Decode payload and save to FRAM
+            {
+                wifi_prov_payload_t wifi_payload;
+                if (json_decode_wifi_prov(payload, &wifi_payload) == ESP_OK) {
+                    // 1. Prepara dados para a FRAM
+                    wifi_credentials_t new_creds = {0};
+                    snprintf(new_creds.ssid, sizeof(new_creds.ssid), "%s", wifi_payload.ssid);
+                    snprintf(new_creds.password, sizeof(new_creds.password), "%s", wifi_payload.password);
+                    new_creds.is_valid = 1;
+
+                    // 2. Persiste na FRAM
+                    if (app_storage_save_wifi_credentials(&new_creds) == ESP_OK) {
+                        // 3. Monta e envia a resposta de confirmação (CMD 5 - ACK)
+                        char tx_ack_buf[256];
+                        if (json_encode_wifi_ack(&wifi_payload, tx_ack_buf, sizeof(tx_ack_buf)) == ESP_OK) {
+                            board_mqtt_publish_uplink(tx_ack_buf, 1);
+                            ESP_LOGI(TAG, "[MQTT TX] CMD 5 (Wi-Fi ACK) enviado: %s", tx_ack_buf);
+                        }
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Falha ao decodificar credenciais Wi-Fi do CMD 4");
+                }
+            }
             break;
 
         case CMD_ID_SCHEDULE_PROV: // CMD 6
@@ -255,12 +276,29 @@ static esp_err_t send_mocked_initial_telemetry(void) {
  * @brief Simulates dynamic Wi-Fi credential loading from FRAM.
  */
 static esp_err_t setup_simulated_fram_wifi_credentials(void) {
-    wifi_credential_t cred = {0};
-    snprintf(cred.ssid, sizeof(cred.ssid), "VIVOFIBRA-56ED_EXT");
-    snprintf(cred.password, sizeof(cred.password), "72233756ED");
+    wifi_credentials_t fram_creds = {0};
+    
+    // Tenta buscar credenciais gravadas na FRAM
+    esp_err_t err = app_storage_get_wifi_credentials(&fram_creds);
+    if (err == ESP_OK) {
+        wifi_credential_t cred = {0};
+        snprintf(cred.ssid, sizeof(cred.ssid), "%s", fram_creds.ssid);
+        snprintf(cred.password, sizeof(cred.password), "%s", fram_creds.password);
 
-    ESP_LOGI(TAG, "Dynamic Credential Loaded: SSID='%s'", cred.ssid);
-    return board_wifi_set_dynamic_credential(&cred);
+        ESP_LOGI(TAG, "Credencial do cliente carregada da FRAM: SSID='%s'", cred.ssid);
+        return board_wifi_set_dynamic_credential(&cred);
+    } else {
+        ESP_LOGW(TAG, "Nenhuma credencial dinâmica de Wi-Fi encontrada na FRAM. Operando apenas com redes de fallback.");
+
+        wifi_credential_t cred = {0};
+        snprintf(cred.ssid, sizeof(cred.ssid), "SenFio3");
+        snprintf(cred.password, sizeof(cred.password), "123456789");
+
+        ESP_LOGI(TAG, "Dynamic Credential Loaded: SSID='%s'", cred.ssid);
+        return board_wifi_set_dynamic_credential(&cred);
+    }
+
+    return ESP_OK;
 }
 
 /**

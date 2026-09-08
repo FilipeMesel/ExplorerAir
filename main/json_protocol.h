@@ -45,6 +45,25 @@ esp_err_t json_get_cmd_id(const char *json_str, int *cmd_id);
  */
 esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data);
 
+/**
+ * @brief Decodifica o payload JSON do CMD 4 (Wi-Fi Provisioning).
+ * 
+ * @param json_str String JSON recebida via MQTT Downlink.
+ * @param out_payload Ponteiro para a estrutura que receberá o SSID e Password.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t json_decode_wifi_prov(const char *json_str, wifi_prov_payload_t *out_payload);
+
+/**
+ * @brief Codifica o payload JSON do CMD 5 (Wi-Fi Received ACK).
+ * 
+ * @param payload Estrutura contendo o SSID e Password a serem confirmados.
+ * @pub_buf Buffer de saída onde a string JSON será armazenada.
+ * @max_len Tamanho máximo do buffer de saída.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t json_encode_wifi_ack(const wifi_prov_payload_t *payload, char *pub_buf, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

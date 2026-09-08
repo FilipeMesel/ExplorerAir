@@ -9,6 +9,7 @@
  * ========================================================================= */
 #define FRAM_ADDR_SYS_CONFIG    0x0000 // Configurações do sistema (Intervalo de Telemetria, etc.)
 #define FRAM_ADDR_RESERVED      0x0020 // Reservado para Wi-Fi/MQTT
+#define FRAM_ADDR_WIFI_CREDENTIALS 0x0020 /**< Localização das credenciais Wi-Fi do cliente (97 bytes) */
 
 /**
  * @brief Inicializa o módulo de armazenamento.
@@ -29,5 +30,21 @@ esp_err_t app_storage_save_telemetry_interval(uint16_t interval_sec);
  * @return ESP_OK em caso de sucesso.
  */
 esp_err_t app_storage_get_telemetry_interval(uint16_t *interval_sec);
+
+/**
+ * @brief Salva as credenciais de Wi-Fi dinâmicas enviadas pelo cliente na FRAM.
+ * 
+ * @param creds Ponteiro para a estrutura com SSID e Senha.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t app_storage_save_wifi_credentials(const wifi_credentials_t *creds);
+
+/**
+ * @brief Lê as credenciais de Wi-Fi dinâmicas salvas na FRAM.
+ * 
+ * @param creds Ponteiro onde as credenciais serão carregadas.
+ * @return esp_err_t ESP_OK se carregado e válido, ESP_ERR_NOT_FOUND se não houver credencial salva.
+ */
+esp_err_t app_storage_get_wifi_credentials(wifi_credentials_t *creds);
 
 #endif // APP_STORAGE_H

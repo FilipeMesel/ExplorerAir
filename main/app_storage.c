@@ -50,3 +50,32 @@ esp_err_t app_storage_get_telemetry_interval(uint16_t *interval_sec) {
 
     return ret;
 }
+
+esp_err_t app_storage_save_wifi_credentials(const wifi_credentials_t *creds) {
+    if (!creds) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t ret = fram_write(FRAM_ADDR_WIFI_CREDENTIALS, (const uint8_t *)creds, sizeof(wifi_credentials_t));
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Novas credenciais Wi-Fi salvas na FRAM com sucesso. SSID: %s", creds->ssid);
+    } else {
+        ESP_LOGE(TAG, "Falha ao gravar credenciais Wi-Fi na FRAM.");
+    }
+    return ret;
+}
+
+esp_err_t app_storage_get_wifi_credentials(wifi_credentials_t *creds) {
+    if (!creds) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t ret = fram_read(FRAM_ADDR_WIFI_CREDENTIALS, (uint8_t *)creds, sizeof(wifi_credentials_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erro na leitura da FRAM para credenciais Wi-Fi.");
+        return ret;
+    }
+
+    if (creds->is_valid != 1) {
+        ESP_LOGW(TAG, "Nenhuma credencial de cliente válida encontrada na FRAM.");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    return ESP_OK;
+}

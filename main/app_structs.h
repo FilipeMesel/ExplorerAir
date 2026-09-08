@@ -6,6 +6,12 @@
 #include "rtc_ht8563.h"
 
 /**
+ * @brief Tamanhos máximos padrão para credenciais Wi-Fi
+ */
+#define WIFI_SSID_MAX_LEN     32
+#define WIFI_PASS_MAX_LEN     64
+
+/**
  * @brief Estrutura de configuração salva na FRAM
  */
 typedef struct {
@@ -51,5 +57,22 @@ typedef struct {
     int battery_mv;            
     last_action_t last_action; 
 } telemetry_data_t;
+
+/**
+ * @brief Estrutura de Credenciais Wi-Fi persistida na FRAM
+ */
+typedef struct __attribute__((packed)) {
+    char ssid[WIFI_SSID_MAX_LEN];
+    char password[WIFI_PASS_MAX_LEN];
+    uint8_t is_valid; /**< Flag de controle (1 = Credencial Válida/Salva, 0 = Vazia) */
+} wifi_credentials_t;
+
+/**
+ * @brief Estrutura para payload do CMD 4 / CMD 5
+ */
+typedef struct {
+    char ssid[WIFI_SSID_MAX_LEN];
+    char password[WIFI_PASS_MAX_LEN];
+} wifi_prov_payload_t;
 
 #endif // APP_STRUCTS_H

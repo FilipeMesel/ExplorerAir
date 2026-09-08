@@ -104,3 +104,49 @@ esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data) {
     cJSON_Delete(root);
     return ESP_OK;
 }
+
+esp_err_t json_decode_wifi_prov(const char *json_str, wifi_prov_payload_t *out_payload) {
+    if (json_str == NULL || out_payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Erro ao realizar parse do JSON no CMD 4");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *ssid = cJSON_GetObjectItemCaseSensitive(root, "ssid");
+    cJSON *pass = cJSON_GetObjectItemCaseSensitive(root, "password");
+
+    if (!cJSON_IsString(ssid) || (ssid->valuestring == NULL) ||
+        !cJSON_IsString(pass) || (pass->valuestring == NULL)) {
+        ESP_LOGE(TAG, "Campos 'ssid' ou 'password' inválidos/ausentes no CMD 4");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(out_payload, 0, sizeof(wifi_prov_payload_t));
+    strncpy(out_payload->ssid, ssid->valuestring, WIFI_SSID_MAX_LEN - 1);
+    strncpy(out_payload->password, pass->valuestring, WIFI_PASS_MAX_LEN - 1);
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_encode_wifi_ack(const wifi_prov_payload_t *payload, char *pub_buf, size_t max_len) {
+    if (payload == NULL || pub_buf == NULL || max_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int len = snprintf(pub_buf, max_len,
+        "{\"cmd_id\":5,\"ssid\":\"%s\",\"password\":\"%s\"}",
+        payload->ssid,
+        payload->password);
+
+    if (len < 0 || (size_t)len >= max_len) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
