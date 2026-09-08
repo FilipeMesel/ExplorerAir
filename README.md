@@ -134,7 +134,7 @@ Device Topics are structured dynamically using the unique Wi-Fi MAC Address:
 ### CMD 0 — Initial Telemetry
 
 ```json
-{"cmd_id": 0, "temp": 24, "umid": 60, "rtc": "10:00", "RSSI": "-65", "bat": 3.7, "last_action": 0}
+{"cmd_id":0,"temp":24,"umid":58,"rtc":"14:30:30","day":8,"month":9,"year":2026,"weekday":2,"rssi":-65,"bat":3.70,"last_action":10}
 ```
 `last_action Values:` 
 0 = Telemetry,

@@ -8,7 +8,7 @@
  * MAPA DE MEMÓRIA FRAM (MB85RS512T - 64 KB Total / 0x0000 a 0xFFFF)
  * ========================================================================= */
 #define FRAM_ADDR_SYS_CONFIG    0x0000 // Configurações do sistema (Intervalo de Telemetria, etc.)
-#define FRAM_ADDR_RESERVED      0x0020 // Reservado para Wi-Fi/MQTT (Futuro)
+#define FRAM_ADDR_RESERVED      0x0020 // Reservado para Wi-Fi/MQTT
 
 /**
  * @brief Inicializa o módulo de armazenamento.

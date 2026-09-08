@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtc_ht8563.h"
 
 /**
  * @brief Estrutura de configuração salva na FRAM
@@ -13,24 +14,11 @@ typedef struct {
 } sys_config_t;
 
 /**
- * @brief Estrutura de tempo para o RTC
- */
-typedef struct {
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t second;
-    uint8_t weekday;
-    uint8_t day;
-    uint8_t month;
-    uint16_t year;
-} app_rtc_time_t;
-
-/**
  * @brief Estrutura para o payload do CMD 1 (Sync RTC & Telemetria)
  */
 typedef struct {
     int cmd_id;
-    app_rtc_time_t sync_time_t;
+    rtc_date_time_t sync_time_t;
     int telemetry_update;
 } cmd1_sync_data_t;
 
@@ -58,8 +46,7 @@ typedef enum {
 typedef struct {
     int temp;                  
     int umid;                  
-    int hour;                  
-    int minute;                
+    rtc_date_time_t sync_time_t;                
     int rssi;                  
     int battery_mv;            
     last_action_t last_action; 

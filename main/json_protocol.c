@@ -23,8 +23,19 @@ esp_err_t json_encode_telemetry(const telemetry_data_t *data, char *out_buf, siz
     float bat_v = data->battery_mv / 1000.0f;
 
     int len = snprintf(out_buf, max_len,
-        "{\"cmd_id\":0,\"temp\":%d,\"umid\":%d,\"rtc\":\"%02d:%02d\",\"rssi\":%d,\"bat\":%.2f,\"last_action\":%d}",
-        data->temp, data->umid, data->hour, data->minute, data->rssi, bat_v, (int)data->last_action);
+        "{\"cmd_id\":0,\"temp\":%d,\"umid\":%d,\"rtc\":\"%02d:%02d:%02d\",\"day\":%d,\"month\":%d,\"year\":%d,\"weekday\":%d,\"rssi\":%d,\"bat\":%.2f,\"last_action\":%d}",
+        data->temp, 
+        data->umid, 
+        data->sync_time_t.hour, 
+        data->sync_time_t.minute,
+        data->sync_time_t.second,
+        data->sync_time_t.day,
+        data->sync_time_t.month,
+        data->sync_time_t.year,
+        data->sync_time_t.weekday, 
+        data->rssi, 
+        bat_v, 
+        (int)data->last_action);
 
     if (len < 0 || (size_t)len >= max_len) {
         return ESP_ERR_NO_MEM;

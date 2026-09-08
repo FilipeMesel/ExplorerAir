@@ -216,12 +216,17 @@ static esp_err_t send_mocked_initial_telemetry(void) {
 
     // 1. Preenche a estrutura de telemetria com dados mockados
     telemetry_data_t mock_telemetry = {
-        .temp = 24,                      // 24 °C
-        .umid = 58,                      // 58% de umidade
-        .hour = 14,                      // 14h
-        .minute = 30,                    // 30m
-        .rssi = -65,                     // -65 dBm
-        .battery_mv = 3700,              // 3.7 V (3700 mV)
+        .temp = 24,                 // 24 °C
+        .umid = 58,                 // 58% de umidade
+        .sync_time_t.hour = 14,     // 14h
+        .sync_time_t.minute = 30,   // 30m
+        .sync_time_t.second = 30,   // 30m
+        .sync_time_t.day = 8,       // 8
+        .sync_time_t.month = 9,     // Sep
+        .sync_time_t.year = 2026,   // 2026
+        .sync_time_t.weekday = 2,   // Thr
+        .rssi = -65,                // -65 dBm
+        .battery_mv = 3700,         // 3.7 V (3700 mV)
         .last_action = ACTION_SET_TEMP_24
     };
 
