@@ -120,144 +120,6 @@ esp_err_t fram_read(uint16_t address, uint8_t *data, size_t len) {
     return ret;
 }
 
-/* --- Abstraction layer implementation --- */
-
-esp_err_t fram_write_config(const uint8_t *data, size_t len) {
-    if (len > 0x0800) return ESP_ERR_INVALID_SIZE;
-    return fram_write(FRAM_CONFIG_OFFSET, data, len);
-}
-
-esp_err_t fram_read_config(uint8_t *data, size_t len) {
-    if (len > 0x0800) return ESP_ERR_INVALID_SIZE;
-    return fram_read(FRAM_CONFIG_OFFSET, data, len);
-}
-
-esp_err_t fram_write_schedules(const uint8_t *data, size_t len) {
-    if (len > 0x1000) return ESP_ERR_INVALID_SIZE;
-    return fram_write(FRAM_SCHEDULES_OFFSET, data, len);
-}
-
-esp_err_t fram_read_schedules(uint8_t *data, size_t len) {
-    if (len > 0x1000) return ESP_ERR_INVALID_SIZE;
-    return fram_read(FRAM_SCHEDULES_OFFSET, data, len);
-}
-
-esp_err_t fram_write_telemetry_ring(uint16_t relative_offset, const uint8_t *data, size_t len) {
-    uint32_t target_addr = FRAM_RING_BUFFER_OFFSET + relative_offset;
-    if (target_addr + len > FRAM_TOTAL_SIZE) return ESP_ERR_INVALID_SIZE;
-    return fram_write((uint16_t)target_addr, data, len);
-}
-
-esp_err_t fram_read_telemetry_ring(uint16_t relative_offset, uint8_t *data, size_t len) {
-    uint32_t target_addr = FRAM_RING_BUFFER_OFFSET + relative_offset;
-    if (target_addr + len > FRAM_TOTAL_SIZE) return ESP_ERR_INVALID_SIZE;
-    return fram_read((uint16_t)target_addr, data, len);
-}
-
-static fram_ring_header_t s_header;
-
-/**
- * @brief Calculates a simple checksum for header integrity verification.
- */
-static uint16_t calc_checksum(const fram_ring_header_t *hdr) {
-    return (uint16_t)(hdr->magic ^ hdr->head ^ hdr->tail ^ hdr->count);
-}
-
-/**
- * @brief Writes the internal header structure to FRAM using fram_write_telemetry_ring.
- */
-static esp_err_t save_header(void) {
-    s_header.checksum = calc_checksum(&s_header);
-    return fram_write_telemetry_ring(HEADER_OFFSET, (const uint8_t *)&s_header, sizeof(fram_ring_header_t));
-}
-
-esp_err_t fram_ring_clear(void) {
-    s_header.magic = FRAM_RING_MAGIC_HEADER;
-    s_header.head = 0;
-    s_header.tail = 0;
-    s_header.count = 0;
-    
-    esp_err_t err = save_header();
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "FRAM Ring Buffer successfully cleared/formatted.");
-    } else {
-        ESP_LOGE(TAG, "Failed to write cleared header to FRAM!");
-    }
-    return err;
-}
-
-esp_err_t fram_ring_init(void) {
-    esp_err_t err = fram_read_telemetry_ring(HEADER_OFFSET, (uint8_t *)&s_header, sizeof(fram_ring_header_t));
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read header from FRAM");
-        return err;
-    }
-
-    // Task 7.3.2: Check if FRAM is uninitialized (0xFF or 0x00) or corrupted
-    if (s_header.magic != FRAM_RING_MAGIC_HEADER || s_header.checksum != calc_checksum(&s_header)) {
-        ESP_LOGW(TAG, "Uninitialized or corrupted FRAM detected. Formatting with default header...");
-        return fram_ring_clear();
-    }
-
-    ESP_LOGI(TAG, "FRAM Ring Buffer Loaded: Head=%u, Tail=%u, Count=%u", 
-             s_header.head, s_header.tail, s_header.count);
-    return ESP_OK;
-}
-
-esp_err_t fram_ring_push(const fram_log_entry_t *entry) {
-    if (entry == NULL) return ESP_ERR_INVALID_ARG;
-
-    uint16_t slot_offset = SLOTS_START_OFFSET + (s_header.head * sizeof(fram_log_entry_t));
-
-    esp_err_t err = fram_write_telemetry_ring(slot_offset, (const uint8_t *)entry, sizeof(fram_log_entry_t));
-    if (err != ESP_OK) return err;
-
-    s_header.head = (s_header.head + 1) % FRAM_RING_MAX_SLOTS;
-    if (s_header.count < FRAM_RING_MAX_SLOTS) {
-        s_header.count++;
-    } else {
-        s_header.tail = (s_header.tail + 1) % FRAM_RING_MAX_SLOTS;
-    }
-
-    return save_header();
-}
-
-esp_err_t fram_ring_pop(fram_log_entry_t *out_entry) {
-    if (out_entry == NULL) return ESP_ERR_INVALID_ARG;
-    if (s_header.count == 0) return ESP_ERR_NOT_FOUND;
-
-    uint16_t slot_offset = SLOTS_START_OFFSET + (s_header.tail * sizeof(fram_log_entry_t));
-
-    esp_err_t err = fram_read_telemetry_ring(slot_offset, (uint8_t *)out_entry, sizeof(fram_log_entry_t));
-    if (err != ESP_OK) return err;
-
-    s_header.tail = (s_header.tail + 1) % FRAM_RING_MAX_SLOTS;
-    s_header.count--;
-
-    return save_header();
-}
-
-esp_err_t fram_ring_flush_to_mqtt(fram_flush_cb_t pub_cb) {
-    if (pub_cb == NULL) return ESP_ERR_INVALID_ARG;
-
-    fram_log_entry_t entry;
-    while (fram_ring_get_count() > 0) {
-        if (fram_ring_pop(&entry) != ESP_OK) break;
-
-        // O callback do chamador resolve como converter/enviar essa entry
-        esp_err_t pub_err = pub_cb(&entry);
-        if (pub_err != ESP_OK) {
-            fram_ring_push(&entry); // Re-armazena se falhar
-            return pub_err;
-        }
-    }
-    return ESP_OK;
-}
-
-uint16_t fram_ring_get_count(void) {
-    return s_header.count;
-}
-
 /* --- Embedded Self-Test Routine --- */
 
 esp_err_t fram_run_tests(void) {
@@ -277,43 +139,43 @@ esp_err_t fram_run_tests(void) {
     }
 
     // Test 2: Configuration Memory Section Write/Read
-    const char write_config[] = "CONFIG_IR_BLASTER_V1";
-    char read_config[30] = {0};
+    // const char write_config[] = "CONFIG_IR_BLASTER_V1";
+    // char read_config[30] = {0};
 
-    ESP_LOGI(TAG, "[TESTE 2] Escrevendo na Seção de Configuração...");
-    if (fram_write_config((uint8_t *)write_config, strlen(write_config)) == ESP_OK) {
-        fram_read_config((uint8_t *)read_config, strlen(write_config));
-        ESP_LOGI(TAG, "[TESTE 2] Lido: %s", read_config);
+    // ESP_LOGI(TAG, "[TESTE 2] Escrevendo na Seção de Configuração...");
+    // if (fram_write_config((uint8_t *)write_config, strlen(write_config)) == ESP_OK) {
+    //     fram_read_config((uint8_t *)read_config, strlen(write_config));
+    //     ESP_LOGI(TAG, "[TESTE 2] Lido: %s", read_config);
 
-        if (strcmp(write_config, read_config) == 0) {
-            ESP_LOGI(TAG, "[TESTE 2] PASSOU: Leitura/Escrita de Configuração OK!");
-        } else {
-            ESP_LOGE(TAG, "[TESTE 2] FALHOU: Dados divergentes!");
-            test_passed = false;
-        }
-    } else {
-        ESP_LOGE(TAG, "[TESTE 2] FALHOU ao escrever configuração");
-        test_passed = false;
-    }
+    //     if (strcmp(write_config, read_config) == 0) {
+    //         ESP_LOGI(TAG, "[TESTE 2] PASSOU: Leitura/Escrita de Configuração OK!");
+    //     } else {
+    //         ESP_LOGE(TAG, "[TESTE 2] FALHOU: Dados divergentes!");
+    //         test_passed = false;
+    //     }
+    // } else {
+    //     ESP_LOGE(TAG, "[TESTE 2] FALHOU ao escrever configuração");
+    //     test_passed = false;
+    // }
 
     // Test 3: Telemetry Ring Buffer Section
-    uint8_t telemetry_data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
-    uint8_t telemetry_read[4] = {0};
+    // uint8_t telemetry_data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    // uint8_t telemetry_read[4] = {0};
 
-    ESP_LOGI(TAG, "[TESTE 3] Escrevendo Telemetria no Ring Buffer...");
-    if (fram_write_telemetry_ring(0x00, telemetry_data, sizeof(telemetry_data)) == ESP_OK) {
-        fram_read_telemetry_ring(0x00, telemetry_read, sizeof(telemetry_read));
+    // ESP_LOGI(TAG, "[TESTE 3] Escrevendo Telemetria no Ring Buffer...");
+    // if (fram_write_telemetry_ring(0x00, telemetry_data, sizeof(telemetry_data)) == ESP_OK) {
+    //     fram_read_telemetry_ring(0x00, telemetry_read, sizeof(telemetry_read));
 
-        if (memcmp(telemetry_data, telemetry_read, sizeof(telemetry_data)) == 0) {
-            ESP_LOGI(TAG, "[TESTE 3] PASSOU: Ring Buffer de Telemetria OK!");
-        } else {
-            ESP_LOGE(TAG, "[TESTE 3] FALHOU: Falha na validação da Telemetria!");
-            test_passed = false;
-        }
-    } else {
-        ESP_LOGE(TAG, "[TESTE 3] FALHOU ao escrever no Ring Buffer");
-        test_passed = false;
-    }
+    //     if (memcmp(telemetry_data, telemetry_read, sizeof(telemetry_data)) == 0) {
+    //         ESP_LOGI(TAG, "[TESTE 3] PASSOU: Ring Buffer de Telemetria OK!");
+    //     } else {
+    //         ESP_LOGE(TAG, "[TESTE 3] FALHOU: Falha na validação da Telemetria!");
+    //         test_passed = false;
+    //     }
+    // } else {
+    //     ESP_LOGE(TAG, "[TESTE 3] FALHOU ao escrever no Ring Buffer");
+    //     test_passed = false;
+    // }
 
     ESP_LOGI(TAG, "=================================================");
     return test_passed ? ESP_OK : ESP_FAIL;
