@@ -8,10 +8,11 @@
 /**
  * @brief Tamanhos máximos padrão para credenciais Wi-Fi
  */
-#define WIFI_SSID_MAX_LEN     32
-#define WIFI_PASS_MAX_LEN     64
-#define MAX_SCHEDULE_ITEMS    11  /**< Agendamentos do ID 0 ao ID 10 */
-#define SCHEDULE_TIME_STR_LEN 6   /**< Formato "HH:MM\0" */
+#define WIFI_SSID_MAX_LEN       32
+#define WIFI_PASS_MAX_LEN       64
+#define MAX_SCHEDULE_ITEMS      11  /**< Agendamentos do ID 0 ao ID 10 */
+#define SCHEDULE_TIME_STR_LEN   6   /**< Formato "HH:MM\0" */
+#define DEFAULT_UPDATE_TIME     300 /**< Default time to sleep */
 
 /**
  * @brief Estrutura de configuração salva na FRAM

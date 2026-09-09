@@ -66,40 +66,51 @@ esp_err_t json_get_cmd_id(const char *json_str, int *cmd_id) {
     return ESP_OK;
 }
 
-esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data) {
+esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data)
+{
     if (json_str == NULL || out_data == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
     cJSON *root = cJSON_Parse(json_str);
     if (root == NULL) {
-        ESP_LOGE(TAG, "Falha ao realizar parse do JSON no CMD 1");
         return ESP_ERR_INVALID_ARG;
     }
 
-    cJSON *cmd_id           = cJSON_GetObjectItemCaseSensitive(root, "cmd_id");
+    // Leitura dos campos do JSON
     cJSON *hour             = cJSON_GetObjectItemCaseSensitive(root, "hour");
-    cJSON *min              = cJSON_GetObjectItemCaseSensitive(root, "min");
-    cJSON *sec              = cJSON_GetObjectItemCaseSensitive(root, "sec");
-    cJSON *week_day         = cJSON_GetObjectItemCaseSensitive(root, "week_day");
+    cJSON *minute           = cJSON_GetObjectItemCaseSensitive(root, "min");
+    cJSON *second           = cJSON_GetObjectItemCaseSensitive(root, "sec");
+    cJSON *weekday          = cJSON_GetObjectItemCaseSensitive(root, "weekday");
+    cJSON *day              = cJSON_GetObjectItemCaseSensitive(root, "day");
+    cJSON *month            = cJSON_GetObjectItemCaseSensitive(root, "month");
+    cJSON *year             = cJSON_GetObjectItemCaseSensitive(root, "year");
     cJSON *telemetry_update = cJSON_GetObjectItemCaseSensitive(root, "telemetry_update");
 
-    if (!cJSON_IsNumber(cmd_id) || !cJSON_IsNumber(hour) || !cJSON_IsNumber(min) ||
-        !cJSON_IsNumber(sec) || !cJSON_IsNumber(week_day) || !cJSON_IsNumber(telemetry_update)) {
-        ESP_LOGE(TAG, "Campos invalidos ou ausentes no JSON do CMD 1");
+    // Validação dos campos obrigatórios do horário
+    if (!cJSON_IsNumber(hour) || !cJSON_IsNumber(minute) || !cJSON_IsNumber(second)) {
         cJSON_Delete(root);
-        return ESP_ERR_INVALID_ARG;
+        return ESP_FAIL;
     }
 
-    out_data->cmd_id                   = cmd_id->valueint;
-    out_data->sync_time_t.hour         = (uint8_t)hour->valueint;
-    out_data->sync_time_t.minute       = (uint8_t)min->valueint;
-    out_data->sync_time_t.second       = (uint8_t)sec->valueint;
-    out_data->sync_time_t.weekday      = (uint8_t)week_day->valueint;
-    out_data->sync_time_t.day          = 1;    // Valor default
-    out_data->sync_time_t.month        = 1;    // Valor default
-    out_data->sync_time_t.year         = 2026; // Valor default
-    out_data->telemetry_update         = telemetry_update->valueint;
+    // Preenchimento do horário e dia da semana
+    out_data->sync_time_t.hour    = (uint8_t)hour->valueint;
+    out_data->sync_time_t.minute  = (uint8_t)minute->valueint;
+    out_data->sync_time_t.second  = (uint8_t)second->valueint;
+    out_data->sync_time_t.weekday = cJSON_IsNumber(weekday) ? (uint8_t)weekday->valueint : 0;
+
+    // Preenchimento da data (com fallback para 0 caso ausente)
+    out_data->sync_time_t.day     = cJSON_IsNumber(day)   ? (uint8_t)day->valueint   : 0;
+    out_data->sync_time_t.month   = cJSON_IsNumber(month) ? (uint8_t)month->valueint : 0;
+    out_data->sync_time_t.year    = cJSON_IsNumber(year)  ? (uint16_t)year->valueint : 0;
+
+    // Decodificação do novo campo: telemetry_update (em segundos)
+    if (cJSON_IsNumber(telemetry_update)) {
+        out_data->telemetry_update = telemetry_update->valueint;
+    } else {
+        // Valor padrão de segurança (ex: 300s = 5 min) se o campo não vier no JSON
+        out_data->telemetry_update = DEFAULT_UPDATE_TIME;
+    }
 
     cJSON_Delete(root);
     return ESP_OK;

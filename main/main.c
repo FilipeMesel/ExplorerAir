@@ -40,36 +40,10 @@ static QueueHandle_t s_app_event_queue = NULL;
 
 static void force_sleep(void)
 {
+    // rtc_ht8563_clear_flags();
+    // rtc_ht8563_set_timer(10);
     // 1. Calcula o próximo evento (Telemetria vs Schedule) e seta o alarme AF no RTC HT8563
-    // power_manager_schedule_next_wakeup();
-    // TEST BEGIN
-    rtc_ht8563_clear_flags();
-
-    // 2. Ajusta hora do RTC
-    // rtc_date_time_t dt_initial = {
-    //     .second = 50,
-    //     .minute = 1,
-    //     .hour = 0,
-    //     .day = 1,
-    //     .weekday = 1,
-    //     .month = 1,
-    //     .year = 2026
-    // };
-
-    // if (rtc_ht8563_set_time(&dt_initial) == ESP_OK) {
-    //     ESP_LOGI(TAG, "Hora inicial ajustada para: 00:01:50");
-    // } else {
-    //     ESP_LOGE(TAG, "Falha ao definir hora inicial no RTC");
-    // }
-
-    // // 3. Configura alarme do RTC
-    // if (rtc_ht8563_set_alarm(0, 2) == ESP_OK) {
-    //     ESP_LOGI(TAG, "Alarme programado com sucesso para 00:02:00");
-    // } else {
-    //     ESP_LOGE(TAG, "Falha ao configurar alarme no RTC");
-    // }
-    rtc_ht8563_set_timer(10);
-    //END TEST
+    power_manager_schedule_next_wakeup();
 
     // 2. Parada dos periféricos de rede
     board_mqtt_stop();
@@ -113,12 +87,17 @@ static void epoch_to_rtc(time_t epoch, rtc_date_time_t *dt) {
 }
 
 /**
- * @brief Converte string "HH:MM" em minutos do dia (0 a 1439)
+ * @brief Converte string "HH:MM" em minutos do dia (0 a 1439).
+ *        Robusto contra caracteres invisíveis e sujeira de memória.
  */
 static int time_str_to_minutes(const char *time_str) {
-    int h = 0, m = 0;
+    if (time_str == NULL) return -1;
+    
+    int h = -1, m = -1;
     if (sscanf(time_str, "%d:%d", &h, &m) == 2) {
-        return h * 60 + m;
+        if (h >= 0 && h < 24 && m >= 0 && m < 60) {
+            return h * 60 + m;
+        }
     }
     return -1;
 }
@@ -127,104 +106,113 @@ esp_err_t power_manager_schedule_next_wakeup(void) {
     rtc_date_time_t current_dt;
     esp_err_t err = rtc_ht8563_get_time(&current_dt);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Falha ao obter horário atual do RTC para cálculo de próximo wakeup.");
+        ESP_LOGE(TAG, "[TAREFA 3] Falha ao obter horario atual do RTC HT8563.");
         return err;
     }
 
-    uint16_t telemetry_interval_sec = 300; // Default 5 min
+    // 1. Limpa todas as flags de interrupção no RTC
+    rtc_ht8563_clear_flags();
+
+    // 2. Obter intervalo de telemetria
+    uint16_t telemetry_interval_sec = 300;
     app_storage_get_telemetry_interval(&telemetry_interval_sec);
 
     time_t now_epoch = rtc_to_epoch(&current_dt);
     time_t telemetry_target_epoch = now_epoch + telemetry_interval_sec;
 
-    // Busca o agendamento ativo mais próximo nos próximos 7 dias
+    // 3. Varrer agendamentos na FRAM
     time_t closest_schedule_epoch = 0;
     schedule_payload_t closest_schedule = {0};
     bool found_valid_schedule = false;
 
-    // Varrer todos os 11 slots de agendamento na FRAM
     for (uint8_t id = 0; id < MAX_SCHEDULE_ITEMS; id++) {
         schedule_payload_t sched;
+        memset(&sched, 0, sizeof(schedule_payload_t));
+        
         if (app_storage_get_schedule(id, &sched) != ESP_OK) {
             continue;
         }
 
-        // Bit 0 = Enable Flag (1 = Habilitado, 0 = Desabilitado/Salvo Apenas)
+        // Bit 0 = Enable Flag
         if ((sched.week_days & 0x01) == 0) {
-            continue; // Agendamento desativado
+            continue;
         }
 
         int sched_min = time_str_to_minutes(sched.time);
-        if (sched_min < 0) continue;
+        if (sched_min < 0) {
+            ESP_LOGW(TAG, "[TAREFA 3] Agendamento ID %d com formato de hora invalido: '%s'", id, sched.time);
+            continue;
+        }
 
-        // Varrer os próximos 7 dias para encontrar a ocorrência válida mais próxima
+        // Varrer os próximos 7 dias
         for (int day_offset = 0; day_offset < 7; day_offset++) {
-            // Recalcula o dia para validar a máscara de bits
             time_t candidate_day_epoch = now_epoch + (day_offset * 86400);
             struct tm tm_candidate;
             localtime_r(&candidate_day_epoch, &tm_candidate);
 
-            // bit1: Dom, bit2: Seg, bit3: Ter, bit4: Qua, bit5: Qui, bit6: Sex, bit7: Sáb
-            uint8_t day_bit = 1 << (tm_candidate.tm_wday + 1);
+            // Bit 1 = Dom (tm_wday=0), Bit 2 = Seg (tm_wday=1), Bit 3 = Ter (tm_wday=2), ...
+            uint8_t day_bit = (1 << (tm_candidate.tm_wday + 1));
 
             if (sched.week_days & day_bit) {
-                // Calcula epoch exato para este dia na hora do agendamento
                 tm_candidate.tm_hour = sched_min / 60;
                 tm_candidate.tm_min  = sched_min % 60;
                 tm_candidate.tm_sec  = 0;
+                tm_candidate.tm_isdst = -1; // Força re-cálculo do Epoch sem fuso/DST manual
 
                 time_t candidate_epoch = mktime(&tm_candidate);
 
-                // O agendamento precisa ser no futuro (pelo menos +5 segundos)
-                if (candidate_epoch > (now_epoch + 5)) {
+                // Considera agendamento se for igual ou superior ao horário atual
+                if (candidate_epoch >= now_epoch) {
                     if (!found_valid_schedule || candidate_epoch < closest_schedule_epoch) {
                         closest_schedule_epoch = candidate_epoch;
                         closest_schedule = sched;
                         found_valid_schedule = true;
                     }
-                    break; // Encontrou a menor ocorrência deste agendamento específico
+                    break; 
                 }
             }
         }
     }
 
-    // Avalia o menor tempo entre Telemetria e Agendamento (ou conflito)
-    time_t final_target_epoch;
+    // 4. Tomada de Decisão (Tarefa 3)
     wakeup_context_t wakeup_ctx = {0};
 
-    // Caso de Conflito ou Agendamento mais próximo que Telemetria
     if (found_valid_schedule && (closest_schedule_epoch <= telemetry_target_epoch)) {
-        final_target_epoch = closest_schedule_epoch;
+        rtc_date_time_t target_dt;
+        epoch_to_rtc(closest_schedule_epoch, &target_dt);
+
+        err = rtc_ht8563_set_alarm(target_dt.hour, target_dt.minute);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "[TAREFA 3] ALARME (AF) PRIORIZADO: Schedule ID=%d para %02d:%02d (em %ld s) | Acao IR: %d",
+                     closest_schedule.schedule_id, target_dt.hour, target_dt.minute,
+                     (long)(closest_schedule_epoch - now_epoch), closest_schedule.action);
+        } else {
+            ESP_LOGE(TAG, "[TAREFA 3] Erro ao gravar Alarme (AF) no RTC HT8563.");
+        }
+
         wakeup_ctx.reason = WAKEUP_REASON_SCHEDULE;
         wakeup_ctx.schedule_id = closest_schedule.schedule_id;
         wakeup_ctx.pending_action = closest_schedule.action;
 
-        ESP_LOGI(TAG, "[ALVO: AGENDAMENTO] ID=%d programado para daqui a %ld s (Ação=%d)",
-                 closest_schedule.schedule_id, (long)(final_target_epoch - now_epoch), closest_schedule.action);
     } else {
-        final_target_epoch = telemetry_target_epoch;
+        err = rtc_ht8563_set_timer(telemetry_interval_sec);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "[TAREFA 3] TIMER (TF) PRIORIZADO: Telemetria programada para daqui a %d s. (Proximo agendamento em: %ld s)", 
+                     telemetry_interval_sec, 
+                     found_valid_schedule ? (long)(closest_schedule_epoch - now_epoch) : -1L);
+        } else {
+            ESP_LOGE(TAG, "[TAREFA 3] Erro ao gravar Timer (TF) no RTC HT8563.");
+        }
+
         wakeup_ctx.reason = WAKEUP_REASON_TELEMETRY;
         wakeup_ctx.schedule_id = 0xFF;
         wakeup_ctx.pending_action = LAST_ACTION_NONE;
-
-        ESP_LOGI(TAG, "[ALVO: TELEMETRIA] Programado para daqui a %d s", telemetry_interval_sec);
     }
 
-    // Persiste a decisão na FRAM para uso na próxima inicialização
+    // 5. Salva na FRAM
     app_storage_save_wakeup_context(&wakeup_ctx);
 
-    // Ajusta o alarme no RTC usando a estrutura de data/hora
-    rtc_date_time_t target_dt;
-    epoch_to_rtc(final_target_epoch, &target_dt);
-
-    err = rtc_ht8563_set_alarm(target_dt.hour, target_dt.minute);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Alarme AF configurado no RTC com sucesso para %02d:%02d", target_dt.hour, target_dt.minute);
-    } else {
-        ESP_LOGE(TAG, "Erro ao configurar alarme no RTC HT8563");
-    }
-
-    return err;
+    return ESP_OK;
 }
 
 /**
@@ -246,30 +234,60 @@ static void process_incoming_mqtt_command(const char *payload) {
     }
 
     switch (cmd_id) {
-        case CMD_ID_RTC_SYNC: // CMD 1
+        case CMD_ID_RTC_SYNC:
             ESP_LOGI(TAG, "[MQTT RX] Command 1 Received: Telemetry Ack / RTC Sync Payload");
             {
                 cmd1_sync_data_t sync_data;
                 if (json_decode_sync(payload, &sync_data) == ESP_OK)
                 {
-                    // 1. Atualizar o RTC HT8563 com os dados recebidos
+                    // 1. Lê a data e hora correntes salvas no RTC antes do update
+                    rtc_date_time_t current_rtc = {0};
+                    rtc_ht8563_get_time(&current_rtc);
+
+                    // 2. Mescla os dados recebidos com a data existente no hardware
                     rtc_date_time_t dt = {
                         .hour = (uint8_t)sync_data.sync_time_t.hour,
                         .minute = (uint8_t)sync_data.sync_time_t.minute,
                         .second = (uint8_t)sync_data.sync_time_t.second,
+                        .day = (sync_data.sync_time_t.day > 0) ? (uint8_t)sync_data.sync_time_t.day : current_rtc.day,
+                        .month = (sync_data.sync_time_t.month > 0) ? (uint8_t)sync_data.sync_time_t.month : current_rtc.month,
+                        .year = (sync_data.sync_time_t.year > 0) ? (uint16_t)sync_data.sync_time_t.year : current_rtc.year,
                         .weekday = (uint8_t)sync_data.sync_time_t.weekday,
-                        .day = (uint8_t)sync_data.sync_time_t.day, // Manter valores padrão se não fornecidos no CMD 1
-                        .month = (uint8_t)sync_data.sync_time_t.month,
-                        .year = (uint16_t)sync_data.sync_time_t.year};
+                    };
 
+                    // Sanidade para evitar gravação de ano 0 se o RTC estiver virgem
+                    if (dt.year < 2026)
+                        dt.year = 2026;
+                    if (dt.day == 0)
+                        dt.day = 1;
+                    if (dt.month == 0)
+                        dt.month = 1;
+
+                    // 3. Recalcula o weekday exato com base na data (Ano-Mês-Dia) para evitar divergências
+                    // struct tm tm_calc = {
+                    //     .tm_sec = dt.second,
+                    //     .tm_min = dt.minute,
+                    //     .tm_hour = dt.hour,
+                    //     .tm_mday = dt.day,
+                    //     .tm_mon = dt.month - 1,
+                    //     .tm_year = dt.year - 1900,
+                    //     .tm_isdst = -1};
+                    // time_t t_calc = mktime(&tm_calc);
+                    // struct tm tm_out;
+                    // localtime_r(&t_calc, &tm_out);
+
+                    // // Atribui o dia da semana real calculado (0 = Dom, 1 = Seg, 2 = Ter...)
+                    // dt.weekday = (uint8_t)tm_out.tm_wday;
+
+                    // 3. Atualiza o RTC com a estrutura consistente
                     if (rtc_ht8563_set_time(&dt) == ESP_OK)
                     {
-                        ESP_LOGI(TAG, "RTC atualizado com sucesso via CMD 1: %02d:%02d:%02d",
-                                 dt.hour, dt.minute, dt.second);
+                        ESP_LOGI(TAG, "RTC atualizado com sucesso: %04d-%02d-%02d %02d:%02d:%02d (Dia da semana: %d)",
+                                 dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.weekday);
                     }
                     else
                     {
-                        ESP_LOGE(TAG, "Falha ao atualizar hora no RTC");
+                        ESP_LOGE(TAG, "Falha ao gravar no RTC HT8563");
                     }
 
                     // 2. Salvar o novo intervalo de telemetria na FRAM
@@ -282,7 +300,7 @@ static void process_incoming_mqtt_command(const char *payload) {
                 }
                 else
                 {
-                    ESP_LOGE(TAG, "Erro ao decodificar JSON do CMD 1");
+                    ESP_LOGE(TAG, "Falha ao decodificar JSON do CMD 1 (RTC Sync)");
                 }
             }
             break;
