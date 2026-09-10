@@ -230,7 +230,10 @@ esp_err_t app_power_schedule_next_wakeup(void) {
     rtc_ht8563_clear_flags();
 
     uint16_t telemetry_interval_sec = 300;
-    app_storage_get_telemetry_interval(&telemetry_interval_sec);
+    if (app_storage_get_telemetry_interval(&telemetry_interval_sec) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Intervalo lido da FRAM: %u segundos", telemetry_interval_sec);
+    }
 
     time_t now_epoch = rtc_to_epoch(&current_dt);
     time_t telemetry_target_epoch = now_epoch + telemetry_interval_sec;
@@ -290,6 +293,7 @@ esp_err_t app_power_schedule_next_wakeup(void) {
         rtc_date_time_t target_dt;
         epoch_to_rtc(closest_schedule_epoch, &target_dt);
 
+        rtc_ht8563_clear_flags();
         err = rtc_ht8563_set_alarm(target_dt.hour, target_dt.minute);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "ALARME (AF) PRIORIZADO: Schedule ID=%d para %02d:%02d | Acao IR: %d",
@@ -303,7 +307,8 @@ esp_err_t app_power_schedule_next_wakeup(void) {
         wakeup_ctx.pending_action = closest_schedule.action;
 
     } else {
-        err = rtc_ht8563_set_timer(telemetry_interval_sec);
+        rtc_ht8563_clear_flags();
+        err = rtc_ht8563_set_timer((uint32_t)telemetry_interval_sec);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "TIMER (TF) PRIORIZADO: Telemetria programada para daqui a %d s.", telemetry_interval_sec);
         } else {
