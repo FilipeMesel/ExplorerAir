@@ -5,6 +5,7 @@
 #include "board_mqtt.h"
 #include "app_storage.h"
 #include "json_protocol.h"
+#include "app_ui.h"
 #include "rtc_ht8563.h"
 #include "app_events.h"
 
@@ -145,11 +146,6 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                 }
 
                 app_storage_save_telemetry_interval((uint16_t)sync_data.telemetry_update);
-
-                // app_event_t evt = { .type = APP_EVENT_TIMER_SET_SUCCESS };
-                // if (g_app_event_queue) {
-                //     xQueueSend(g_app_event_queue, &evt, 0);
-                // }
             } else {
                 ESP_LOGE(TAG, "Falha ao decodificar JSON do CMD 1 (RTC Sync)");
             }
@@ -174,6 +170,8 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                         board_mqtt_publish_uplink(ack_buf, 1); // QoS 1
                         ESP_LOGI(TAG, "[MQTT TX] CMD 5 (Wi-Fi ACK) enviado: %s", ack_buf);
                     }
+
+                    app_ui_post_message("NOVO WIFI", "ATUALIZADO", 100);
                 }
             } else {
                 ESP_LOGE(TAG, "Falha ao decodificar credenciais Wi-Fi do CMD 4");
@@ -189,6 +187,8 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     if (json_encode_schedule_ack(&sched, ack_buf, sizeof(ack_buf)) == ESP_OK) {
                         board_mqtt_publish_uplink(ack_buf, 1); // QoS 1
                         ESP_LOGI(TAG, "[MQTT TX] CMD 7 (Schedule ACK) enviado: %s", ack_buf);
+
+                        app_ui_post_message("NOVO AGENDAMENTO", "SALVO!", 100);
                     }
                 }
             } else {
@@ -199,10 +199,8 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
 
         case CMD_ID_SET_IR_RAW_DATA: { // CMD 8
             ESP_LOGI(TAG, "[MQTT RX] Command 8 Received: Set IR Raw Data Payload");
-            app_event_t evt = { .type = APP_EVENT_SHUTDOWN_REQUESTED };
-            if (g_app_event_queue) {
-                xQueueSend(g_app_event_queue, &evt, 0);
-            }
+
+            app_ui_post_message("COMANDO IR", "ATUALIZADO", 100);
             break;
         }
 
