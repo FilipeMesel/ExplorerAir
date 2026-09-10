@@ -49,7 +49,7 @@ esp_err_t rtc_ht8563_get_time(rtc_date_time_t *dt);
 esp_err_t rtc_ht8563_clear_flags(void);
 esp_err_t rtc_ht8563_get_flags(bool *timer_flag, bool *alarm_flag);
 esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute);
-esp_err_t rtc_ht8563_set_timer(uint8_t seconds);
+esp_err_t rtc_ht8563_set_timer(uint32_t seconds);
 
 /**
  * @brief Tests for the RTC functionality. These functions can be called from app_main or other parts of the application.
