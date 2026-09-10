@@ -339,7 +339,7 @@ esp_err_t oled_show_screen(oled_screen_t screen, oled_cmd_action_t action, uint8
             break;
 
         case OLED_SCREEN_BOOT:
-            draw_string_5x7(20, 32, "INICIANDO...");
+            draw_string_5x7(20, 32, "EXPLORER");
             break;
 
         case OLED_SCREEN_SLEEP_PREP:

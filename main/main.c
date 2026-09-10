@@ -15,7 +15,7 @@
 
 #include "board_i2c_bus.h"
 #include "rtc_ht8563.h"
-#include "display_oled.h"
+#include "services/app_ui.h"
 #include "board_wifi.h"
 
 #include "soc/rtc_cntl_reg.h"
@@ -124,11 +124,20 @@ static void app_fsm_task(void *pvParameters) {
 
                 case APP_EVENT_WIFI_FAILOVER_EXHAUSTED:
                     ESP_LOGW(TAG, "[FSM] Falha no Wi-Fi. Solicitando shutdown do sistema...");
+
+                    app_ui_show_wifi_error();
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+                    app_ui_clear();
+                    app_ui_deinit();
+
                     app_power_shutdown();
                     break;
 
                 case APP_EVENT_MQTT_CONNECTED:
                     ESP_LOGI(TAG, "[FSM] MQTT Conectado. Enviando telemetria inicial...");
+
+                    app_ui_show_message("CONECTADO", "TELEMETRIA", 0);
+
                     app_comms_send_initial_telemetry();
 
                     if (g_shutdown_timer != NULL)
@@ -146,6 +155,7 @@ static void app_fsm_task(void *pvParameters) {
                 case APP_EVENT_TIMER_SET_SUCCESS:
                 case APP_EVENT_MQTT_DISCONNECTED:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
+                    app_ui_clear();
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
                     break;
@@ -159,6 +169,7 @@ static void app_fsm_task(void *pvParameters) {
 }
 
 void app_main(void) {
+
     // Alocação da fila de eventos principal no app_main()
     g_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
     if (g_app_event_queue == NULL) {
@@ -167,6 +178,11 @@ void app_main(void) {
     }
 
     ESP_ERROR_CHECK(board_hardware_init());
+
+    app_ui_init();
+    app_ui_update_header(4200, "v1.0");
+    app_ui_show_booting();
+    vTaskDelay(pdMS_TO_TICKS(1500));
 
     init_shutdown_timer();
 
