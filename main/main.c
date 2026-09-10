@@ -7,16 +7,17 @@
 #include "nvs_flash.h"
 #include "esp_timer.h"
 
+#include "board_i2c_bus.h"
+#include "rtc_ht8563.h"
+#include "board_wifi.h"
+
 #include "app_events.h"
 #include "app_structs.h"
 #include "app_storage.h"
 #include "services/app_comms.h"
 #include "services/app_power.h"
-
-#include "board_i2c_bus.h"
-#include "rtc_ht8563.h"
-#include "display_oled.h"
-#include "board_wifi.h"
+#include "services/app_ui.h"
+#include "services/app_buttons.h"
 
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
@@ -108,13 +109,19 @@ static void app_fsm_task(void *pvParameters) {
                     if (current_evt.boot_cause == EVENT_WAKEUP_BUTTON_DUAL_HOLD)
                     {
                         ESP_LOGI(TAG, "Modo de Configuração Local / IR Learn ativo.");
-                        // Não inicia Wi-Fi se for apenas modo local
+                        app_buttons_start_menu_task();
                     }
                     else
                     {
                         ESP_LOGI(TAG, "Iniciando Wi-Fi failover...");
                         app_comms_wifi_start_failover();
                     }
+                    break;
+
+                case APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY:
+                    ESP_LOGI(TAG, "[FSM] Saida do Modo Local solicitada. Iniciando conexao para telemetria...");
+                    app_ui_post_message("CONECTANDO...", "ENVIANDO DADOS", 0);
+                    app_comms_wifi_start_failover();
                     break;
 
                 case APP_EVENT_WIFI_CONNECTED:
@@ -124,11 +131,20 @@ static void app_fsm_task(void *pvParameters) {
 
                 case APP_EVENT_WIFI_FAILOVER_EXHAUSTED:
                     ESP_LOGW(TAG, "[FSM] Falha no Wi-Fi. Solicitando shutdown do sistema...");
+
+                    app_ui_post_wifi_error();
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+                    app_ui_post_clear();
+                    app_power_shutdown();
+
                     app_power_shutdown();
                     break;
 
                 case APP_EVENT_MQTT_CONNECTED:
                     ESP_LOGI(TAG, "[FSM] MQTT Conectado. Enviando telemetria inicial...");
+
+                    app_ui_post_message("WIFI", "CONECTADO", 100);
+
                     app_comms_send_initial_telemetry();
 
                     if (g_shutdown_timer != NULL)
@@ -146,6 +162,8 @@ static void app_fsm_task(void *pvParameters) {
                 case APP_EVENT_TIMER_SET_SUCCESS:
                 case APP_EVENT_MQTT_DISCONNECTED:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
+                    app_ui_post_clear();
+                    app_power_shutdown();
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
                     break;
@@ -159,6 +177,7 @@ static void app_fsm_task(void *pvParameters) {
 }
 
 void app_main(void) {
+
     // Alocação da fila de eventos principal no app_main()
     g_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
     if (g_app_event_queue == NULL) {
@@ -167,6 +186,11 @@ void app_main(void) {
     }
 
     ESP_ERROR_CHECK(board_hardware_init());
+
+    app_ui_init();
+    app_ui_post_header(4200, "v1.0");
+    app_ui_post_booting();
+    vTaskDelay(pdMS_TO_TICKS(1500));
 
     init_shutdown_timer();
 
