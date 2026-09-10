@@ -1,5 +1,5 @@
 #include "app_storage.h"
-#include "fram_mb85rs512t.h" // Driver SPI bruto
+#include "fram_mb85rs512t.h" // Driver SPI para a memória FRAM MB85RS512T
 #include "esp_log.h"
 
 static const char *TAG = "APP_STORAGE";

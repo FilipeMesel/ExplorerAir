@@ -151,7 +151,8 @@ esp_err_t json_encode_wifi_ack(const wifi_prov_payload_t *payload, char *pub_buf
     }
 
     int len = snprintf(pub_buf, max_len,
-        "{\"cmd_id\":5,\"ssid\":\"%s\",\"password\":\"%s\"}",
+        "{\"cmd_id\":%d,\"ssid\":\"%s\",\"password\":\"%s\"}",
+        CMD_ID_WIFI_ACK,
         payload->ssid,
         payload->password);
 
@@ -239,7 +240,8 @@ esp_err_t json_encode_schedule_ack(const schedule_payload_t *payload, char *pub_
     }
 
     int len = snprintf(pub_buf, max_len,
-        "{\"cmd_id\":7,\"schedule_id\":%d,\"week_days\":%d,\"time\":\"%s\",\"action\":\"%s\"}",
+        "{\"cmd_id\":%d,\"schedule_id\":%d,\"week_days\":%d,\"time\":\"%s\",\"action\":\"%s\"}",
+        CMD_ID_SCHEDULE_ACK,
         payload->schedule_id,
         payload->week_days,
         payload->time,
