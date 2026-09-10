@@ -28,14 +28,14 @@ static char s_fw_version[8] = "v1.0";
 static const char *s_action_strings[OLED_CMD_MAX] = {
     [OLED_CMD_POWER_OFF] = "DESLIGAR",                  /*< Turn Off */
     [OLED_CMD_POWER_ON]  = "LIGAR",                     /*< Turn On */
-    [OLED_CMD_TEMP_18]   = "18 Graus",                  /*< Temperature 18 C */
-    [OLED_CMD_TEMP_19]   = "19 Graus",                  /*< Temperature 19 C */
-    [OLED_CMD_TEMP_20]   = "20 Graus",                  /*< Temperature 20 C */
-    [OLED_CMD_TEMP_21]   = "21 Graus",                  /*< Temperature 21 C */
-    [OLED_CMD_TEMP_22]   = "22 Graus",                  /*< Temperature 22 C */
-    [OLED_CMD_TEMP_23]   = "23 Graus",                  /*< Temperature 23 C */
-    [OLED_CMD_TEMP_24]   = "24 Graus",                  /*< Temperature 24 C */
-    [OLED_CMD_TEMP_25]   = "25 Graus"                   /*< Temperature 25 C */
+    [OLED_CMD_TEMP_18]   = "18 C",                  /*< Temperature 18 C */
+    [OLED_CMD_TEMP_19]   = "19 C",                  /*< Temperature 19 C */
+    [OLED_CMD_TEMP_20]   = "20 C",                  /*< Temperature 20 C */
+    [OLED_CMD_TEMP_21]   = "21 C",                  /*< Temperature 21 C */
+    [OLED_CMD_TEMP_22]   = "22 C",                  /*< Temperature 22 C */
+    [OLED_CMD_TEMP_23]   = "23 C",                  /*< Temperature 23 C */
+    [OLED_CMD_TEMP_24]   = "24 C",                  /*< Temperature 24 C */
+    [OLED_CMD_TEMP_25]   = "25 C"                   /*< Temperature 25 C */
 };
 
 /**
@@ -339,7 +339,7 @@ esp_err_t oled_show_screen(oled_screen_t screen, oled_cmd_action_t action, uint8
             break;
 
         case OLED_SCREEN_BOOT:
-            draw_string_5x7(20, 32, "INICIANDO...");
+            draw_string_5x7(20, 32, "EXPLORER");
             break;
 
         case OLED_SCREEN_SLEEP_PREP:
