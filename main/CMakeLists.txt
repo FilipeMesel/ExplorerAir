@@ -1,2 +1,23 @@
-idf_component_register(SRCS "main.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS 
+        "main.c"
+        "services/app_power.c"
+        "services/app_storage.c"
+        "services/app_comms.c"
+        "protocol/json_protocol.c"
+    INCLUDE_DIRS 
+        "."
+        "services"
+        "protocol"
+    REQUIRES 
+        esp_driver_gpio
+        board_spi_bus 
+        board_i2c_bus 
+        fram_mb85rs512t 
+        display_oled 
+        rtc_ht8563 
+        nvs_flash 
+        board_wifi 
+        board_mqtt
+        espressif__cjson
+)
