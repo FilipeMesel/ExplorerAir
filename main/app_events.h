@@ -1,22 +1,9 @@
-#ifndef MAIN_BOOT_H
-#define MAIN_BOOT_H
+#ifndef APP_EVENTS_H
+#define APP_EVENTS_H
 
-#include "esp_err.h"
-#include <stdbool.h>
-
-// 1. Tipos e Estruturas da Aplicação
-#include "app_structs.h"
-
-// 2. Drivers e Periféricos
-#include "board_i2c_bus.h"
-#include "rtc_ht8563.h"
-#include "display_oled.h"
-#include "board_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "board_mqtt.h"
-
-// 3. Módulos Dependentes dos Tipos Globais
-#include "app_storage.h"
-#include "json_protocol.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,34 +36,22 @@ typedef enum {
     APP_EVENT_SHUTDOWN_REQUESTED
 } app_event_type_t;
 
-
-// 2. Definir a struct do evento que faltava
+/**
+ * @brief Estrutura unificada de eventos da aplicação.
+ */
 typedef struct {
     app_event_type_t type;
     boot_event_t boot_cause;
-    board_mqtt_data_t mqtt_data; // <--- Alterado de board_mqtt_event_data_t para board_mqtt_data_t
+    board_mqtt_data_t mqtt_data;
 } app_event_t;
 
-
 /**
- * @brief Initializes boot analysis pins and determines the current wakeup event.
- * 
- * @param[out] out_event Pointer to store the detected boot event.
- * @return esp_err_t ESP_OK on success, or error code on hardware read failure.
+ * @brief Fila global de eventos para uso desacoplado entre os serviços.
  */
-esp_err_t analyze_boot_cause(boot_event_t *out_event);
-
-/**
- * @brief Avalia agendamentos e intervalo de telemetria para calcular e programar o próximo alarme no RTC.
- * 
- * @return esp_err_t ESP_OK em caso de sucesso.
- */
-esp_err_t power_manager_schedule_next_wakeup(void);
-
-static esp_err_t execute_pending_fram_action(void);
+extern QueueHandle_t g_app_event_queue;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // MAIN_BOOT_H
+#endif // APP_EVENTS_H

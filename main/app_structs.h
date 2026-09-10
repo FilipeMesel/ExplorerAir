@@ -12,7 +12,7 @@
 #define WIFI_PASS_MAX_LEN       64
 #define MAX_SCHEDULE_ITEMS      11  /**< Agendamentos do ID 0 ao ID 10 */
 #define SCHEDULE_TIME_STR_LEN   6   /**< Formato "HH:MM\0" */
-#define DEFAULT_UPDATE_TIME     300 /**< Default time to sleep */
+#define DEFAULT_UPDATE_TIME     300 /**< Tempo padrão de sleep (segundos) */
 
 /**
  * @brief Estrutura de configuração salva na FRAM
@@ -32,7 +32,7 @@ typedef struct {
 } cmd1_sync_data_t;
 
 /**
- * @brief Enumeration of Last Actions
+ * @brief Enumeration of Last Actions (Comandos de Infravermelho)
  */
 typedef enum {
     LAST_ACTION_NONE            = 0,
@@ -50,7 +50,7 @@ typedef enum {
 } last_action_t;
 
 /**
- * @brief Estrutura que guarda a intenção/contexto para o próximo wakeup
+ * @brief Razão do próximo wakeup do sistema
  */
 typedef enum {
     WAKEUP_REASON_TELEMETRY = 0,
@@ -93,13 +93,16 @@ typedef struct {
     uint8_t schedule_id;                 /**< ID do agendamento (0 a 10) */
     uint8_t week_days;                   /**< Máscara de bits dos dias + enable bit (LSB) */
     char time[SCHEDULE_TIME_STR_LEN];    /**< String no formato "HH:MM" */
-    last_action_t action;                /**< Ação enviada no agendamento (ex: ACTION_SET_TEMP_18) */
+    last_action_t action;                /**< Ação enviada no agendamento */
 } schedule_payload_t;
 
+/**
+ * @brief Estrutura que guarda a intenção/contexto do próximo wakeup na FRAM
+ */
 typedef struct __attribute__((packed)) {
     wakeup_reason_t reason;
-    uint8_t schedule_id;       /**< ID do agendamento (caso o reason seja WAKEUP_REASON_SCHEDULE) */
-    last_action_t pending_action; /**< Ação IR que deve ser disparada ao acordar */
+    uint8_t schedule_id;          /**< ID do agendamento (se reason == WAKEUP_REASON_SCHEDULE) */
+    last_action_t pending_action; /**< Ação IR a ser disparada ao acordar */
 } wakeup_context_t;
 
 #endif // APP_STRUCTS_H
