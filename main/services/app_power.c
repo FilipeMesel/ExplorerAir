@@ -18,8 +18,8 @@ static const char *TAG = "APP_POWER";
 #define GPIO_BTN_MENU_SELECT  GPIO_NUM_5
 #define GPIO_BTN_MENU_ENTER   GPIO_NUM_38
 
-#define BUTTON_HOLD_DURATION_MS 2000
-#define BUTTON_POLL_INTERVAL_MS 50
+#define BUTTON_HOLD_DURATION_MS 1000
+#define BUTTON_POLL_INTERVAL_MS 100
 
 /* =========================================================================
  * FUNÇÕES UTILITÁRIAS DE DATA / TEMPO

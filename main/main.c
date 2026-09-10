@@ -7,16 +7,17 @@
 #include "nvs_flash.h"
 #include "esp_timer.h"
 
+#include "board_i2c_bus.h"
+#include "rtc_ht8563.h"
+#include "board_wifi.h"
+
 #include "app_events.h"
 #include "app_structs.h"
 #include "app_storage.h"
 #include "services/app_comms.h"
 #include "services/app_power.h"
-
-#include "board_i2c_bus.h"
-#include "rtc_ht8563.h"
 #include "services/app_ui.h"
-#include "board_wifi.h"
+#include "services/app_buttons.h"
 
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
@@ -108,13 +109,19 @@ static void app_fsm_task(void *pvParameters) {
                     if (current_evt.boot_cause == EVENT_WAKEUP_BUTTON_DUAL_HOLD)
                     {
                         ESP_LOGI(TAG, "Modo de Configuração Local / IR Learn ativo.");
-                        // Não inicia Wi-Fi se for apenas modo local
+                        app_buttons_start_menu_task();
                     }
                     else
                     {
                         ESP_LOGI(TAG, "Iniciando Wi-Fi failover...");
                         app_comms_wifi_start_failover();
                     }
+                    break;
+
+                case APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY:
+                    ESP_LOGI(TAG, "[FSM] Saida do Modo Local solicitada. Iniciando conexao para telemetria...");
+                    app_ui_post_message("CONECTANDO...", "ENVIANDO DADOS", 0);
+                    app_comms_wifi_start_failover();
                     break;
 
                 case APP_EVENT_WIFI_CONNECTED:
