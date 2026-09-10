@@ -49,28 +49,37 @@ A high-reliability, ultra-low-power IoT firmware for smart air conditioner contr
 
 ---
 
-## 📐 Component Architecture
+## 📐 Component Architecture & Directory Structure
 
-The project enforces strict modularity. Peripherals and hardware busses are encapsulated as independent components, while data models, storage layouts, and application orchestration live inside the primary application module (`main`).
+The project enforces strict modularity. Peripherals and low-level board drivers live in `components/`, while business services, messaging protocols, event definitions, and system execution logic are cleanly organized inside `main/`.
 
 ```text
 explorerAirConditioner/
-├── components/
-│   ├── board_i2c_bus/        # Centralized I2C Bus Manager (Shared between RTC & Display)
-│   ├── board_spi_bus/        # SPI Bus Manager (Dedicated for FRAM Interface)
-│   ├── rtc_ht8563/           # HT8563ARZ RTC Driver (BCD, Alarm, Timer, INT Flags)
-│   ├── fram_mb85rs512t/      # MB85RS512T SPI FRAM Low-Level Driver (Pure Read/Write Byte Operations)
-│   ├── ir_remote/            # RMT Transceiver for RAW Infrared waveforms
-│   ├── display_oled/         # OLED Display Controller & Português UI Menu Flow
-│   ├── board_wifi/           # Wi-Fi Manager with Primary/Fallback Network Failover Engine
-│   └── board_mqtt/           # Dynamic MAC-based MQTT Client Wrapper & Event-Driven Engine
-└── main/
-    ├── app_structs.h         # Compact C Structs, Packed Enums & Unifying Data Types
-    ├── app_storage.h         # FRAM Static Memory Layout Offsets & Storage Service API
-    ├── app_storage.c         # High-level Storage Abstraction (Schedules, IR Raw Slots, Telemetry Ring Buffer)
-    ├── json_protocol.h       # Lightweight Encoders & Parsers for MQTT Uplink/Downlink Payloads (header)
-    ├── json_protocol.c       # Lightweight Encoders & Parsers for MQTT Uplink/Downlink Payloads (source)
-    └── main.c                # System Entry Point, Deep Sleep Lifecycle & Business Logic Execution Engine
+├── bootloader_components/   # Custom early-stage bootloader hooks and configurations
+├── components/              # Modular Hardware Peripheral Drivers
+│   ├── board_i2c_bus/       # Centralized I2C Bus Manager (Shared: RTC & Display)
+│   ├── board_spi_bus/       # SPI Bus Manager (Dedicated for FRAM Interface)
+│   ├── rtc_ht8563/          # HT8563ARZ RTC Driver (BCD, Alarm, Timer, INT Flags)
+│   ├── fram_mb85rs512t/     # MB85RS512T SPI FRAM Low-Level Driver (Pure Byte Read/Write)
+│   ├── ir_remote/           # RMT Transceiver for RAW Infrared waveforms
+│   └── display_oled/        # OLED Display Controller & Português UI Menu Flow
+└── main/                    # Main Application Domain Logic
+    ├── protocol/            # Messaging Encoders & Serialization
+    │   ├── json_protocol.c  # Lightweight JSON Encoders & Parsers for MQTT Payloads
+    │   └── json_protocol.h  # Header for JSON protocol definitions
+    ├── services/            # System Business Services
+    │   ├── app_comms.c      # Networking Subsystem (Wi-Fi Manager & MQTT Client Engine)
+    │   ├── app_comms.h      # Header for Wi-Fi and MQTT interfaces
+    │   ├── app_power.c      # Power Management (Hold Pin, HT8563 Calculators & Shutdown)
+    │   ├── app_power.h      # Header for Power Control & Deep Sleep interfaces
+    │   ├── app_storage.c    # High-level FRAM Abstraction (Schedules, IR Slots, Telemetry Buffer)
+    │   └── app_storage.h    # Storage Offsets & FRAM Service API
+    ├── app_events.h         # Global Inter-Task Event Definitions & Event Queue Structs
+    ├── app_structs.h        # Compact Data Structs & Packed Types (Zero-heap Overhead)
+    ├── CMakeLists.txt       # Main Module Build Script
+    ├── idf_component.yml    # ESP Component Manager Dependencies
+    ├── Kconfig.projbuild    # Project Configuration Menu Settings
+    └── main.c               # Entry Point, FSM Task (g_app_event_queue) & Timer Management
 ```
 
 **Key Architectural Separation**
@@ -204,7 +213,7 @@ Where:
 ### CMD 1 — Telemetry Acknowledgment / Time Sync
 
 ```json
-{"cmd_id": 1, "status": "OK", "telemetry_update": 120, "actual_time": "10:42:50", "week_day": 2}
+{ "cmd_id": 1, "year": 2026, "month": 9, "day": 8, "hour": 21, "min": 38, "sec": 0,  "weekday": 2, "telemetry_update": 10 }
 ```
 
 `week_day Values:`
