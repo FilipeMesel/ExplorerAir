@@ -204,7 +204,7 @@ Where:
 ### CMD 1 — Telemetry Acknowledgment / Time Sync
 
 ```json
-{"cmd_id": 1, "status": "OK", "telemetry_update": 120, "actual_time": "10:42:50", "week_day": 2}
+{ "cmd_id": 1, "year": 2026, "month": 9, "day": 8, "hour": 21, "min": 38, "sec": 0,  "weekday": 2, "telemetry_update": 10 }
 ```
 
 `week_day Values:`
