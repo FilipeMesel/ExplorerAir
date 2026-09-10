@@ -322,10 +322,6 @@ esp_err_t app_power_schedule_next_wakeup(void) {
 void app_power_shutdown(void) {
     app_power_schedule_next_wakeup();
 
-    // board_mqtt_stop();
-    // board_wifi_stop();
-    // vTaskDelay(pdMS_TO_TICKS(100));
-
     ESP_LOGI(TAG, "Desligando alimentacao via GPIO_POWER_HOLD_PIN...");
     gpio_set_level(GPIO_POWER_HOLD_PIN, 1);
 }

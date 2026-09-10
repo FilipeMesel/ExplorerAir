@@ -53,6 +53,14 @@ void app_comms_on_wifi_event(void *handler_args, esp_event_base_t base, int32_t 
                     xQueueSend(g_app_event_queue, &evt, 0);
                 }
                 break;
+            
+            case BOARD_WIFI_EVENT_DISCONNECTED:
+                ESP_LOGW(TAG, "WiFi Desconectado");
+                evt.type = APP_EVENT_SHUTDOWN_REQUESTED;
+                if (g_app_event_queue) {
+                    xQueueSend(g_app_event_queue, &evt, 0);
+                }
+                break;
 
             default:
                 break;
@@ -138,10 +146,10 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
 
                 app_storage_save_telemetry_interval((uint16_t)sync_data.telemetry_update);
 
-                app_event_t evt = { .type = APP_EVENT_TIMER_SET_SUCCESS };
-                if (g_app_event_queue) {
-                    xQueueSend(g_app_event_queue, &evt, 0);
-                }
+                // app_event_t evt = { .type = APP_EVENT_TIMER_SET_SUCCESS };
+                // if (g_app_event_queue) {
+                //     xQueueSend(g_app_event_queue, &evt, 0);
+                // }
             } else {
                 ESP_LOGE(TAG, "Falha ao decodificar JSON do CMD 1 (RTC Sync)");
             }

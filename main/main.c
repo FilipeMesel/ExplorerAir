@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
+#include "esp_timer.h"
 
 #include "app_events.h"
 #include "app_structs.h"
@@ -20,9 +21,31 @@
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
+#define MQTT_CONNECTED_TIMEOUT      10000000ULL
+
 static const char *TAG = "MAIN_APP";
 
 QueueHandle_t g_app_event_queue = NULL;
+
+static esp_timer_handle_t g_shutdown_timer = NULL;
+
+static void shutdown_timer_callback(void* arg) {
+    ESP_LOGI(TAG, "[TIMER 30s] Tempo limite atingido! Solicitando shutdown...");
+    app_event_t evt = {
+        .type = APP_EVENT_SHUTDOWN_REQUESTED
+    };
+    if (g_app_event_queue) {
+        xQueueSend(g_app_event_queue, &evt, 0);
+    }
+}
+
+static void init_shutdown_timer(void) {
+    const esp_timer_create_args_t timer_args = {
+        .callback = &shutdown_timer_callback,
+        .name = "shutdown_30s_timer"
+    };
+    esp_timer_create(&timer_args, &g_shutdown_timer);
+}
 
 static esp_err_t board_hardware_init(void) {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -107,6 +130,12 @@ static void app_fsm_task(void *pvParameters) {
                 case APP_EVENT_MQTT_CONNECTED:
                     ESP_LOGI(TAG, "[FSM] MQTT Conectado. Enviando telemetria inicial...");
                     app_comms_send_initial_telemetry();
+
+                    if (g_shutdown_timer != NULL)
+                    {
+                        esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT); // 30s em microssegundos
+                        ESP_LOGI(TAG, "[FSM] Timer de shutdown de %ds iniciado com sucesso.", MQTT_CONNECTED_TIMEOUT);
+                    }
                     break;
 
                 case APP_EVENT_MQTT_DATA_RECEIVED:
@@ -115,6 +144,7 @@ static void app_fsm_task(void *pvParameters) {
                     break;
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
+                case APP_EVENT_MQTT_DISCONNECTED:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
@@ -129,7 +159,7 @@ static void app_fsm_task(void *pvParameters) {
 }
 
 void app_main(void) {
-    // Subtarefa 5.2: Alocação da fila de eventos principal no app_main()
+    // Alocação da fila de eventos principal no app_main()
     g_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
     if (g_app_event_queue == NULL) {
         ESP_LOGE(TAG, "Falha ao criar a fila global de eventos!");
@@ -137,6 +167,8 @@ void app_main(void) {
     }
 
     ESP_ERROR_CHECK(board_hardware_init());
+
+    init_shutdown_timer();
 
     xTaskCreate(app_fsm_task, "app_fsm_task", 8192, NULL, 5, NULL);
 }
