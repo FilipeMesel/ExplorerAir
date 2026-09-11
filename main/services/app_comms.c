@@ -34,6 +34,18 @@ esp_err_t app_comms_get_wifi_credentials_from_fram(void) {
     return board_wifi_set_dynamic_credential(&fallback_cred);
 }
 
+static last_action_t get_last_action_from_fram(void) {
+    wakeup_context_t wakeup_ctx = {0};
+    esp_err_t err = app_storage_get_wakeup_context(&wakeup_ctx);
+    
+    if (err == ESP_OK) {
+        return wakeup_ctx.pending_action;
+    }
+    
+    ESP_LOGW(TAG, "Não foi possível ler wakeup context. Usando LAST_ACTION_NONE.");
+    return LAST_ACTION_NONE;
+}
+
 void app_comms_on_wifi_event(void *handler_args, esp_event_base_t base, int32_t id, void *data) {
     app_event_t evt = {0};
 
@@ -212,13 +224,48 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
     return ESP_OK;
 }
 
+// Descarrega todas as telemetrias armazenadas na FRAM via MQTT
+esp_err_t app_comms_flush_offline_telemetries(void) {
+    uint16_t pending_count = 0;
+    app_storage_get_telemetry_log_count(&pending_count);
+
+    if (pending_count == 0) {
+        ESP_LOGI(TAG, "Nenhuma telemetria offline pendente na FRAM.");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Enviando %u telemetria(s) pendente(s) da FRAM...", pending_count);
+
+    telemetry_data_t offline_item;
+    char pub_buf[300];
+
+    while (app_storage_pop_telemetry_log(&offline_item) == ESP_OK) {
+        memset(pub_buf, 0, sizeof(pub_buf));
+        
+        if (json_encode_telemetry(&offline_item, pub_buf, sizeof(pub_buf)) == ESP_OK) {
+            int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
+            if (msg_id < 0) {
+                // Se falhar a publicação, devolve o item para a FRAM para não perder os dados
+                ESP_LOGE(TAG, "Falha no envio MQTT do log offline. Reenfileirando...");
+                app_storage_push_telemetry_log(&offline_item);
+                return ESP_FAIL;
+            }
+            ESP_LOGI(TAG, "Telemetria offline enviada com sucesso.");
+            vTaskDelay(pdMS_TO_TICKS(100)); // Pequeno delay para evitar sobrecarga na rede
+        }
+    }
+
+    return ESP_OK;
+}
+
+// Atualização da função de envio inicial
 esp_err_t app_comms_send_initial_telemetry(void) {
     telemetry_data_t telemetry = {
         .temp = 24,
         .umid = 58,
         .rssi = -65,
         .battery_mv = 3700,
-        .last_action = ACTION_SET_TEMP_24
+        .last_action = get_last_action_from_fram()
     };
 
     rtc_ht8563_get_time(&telemetry.sync_time_t);
@@ -226,9 +273,18 @@ esp_err_t app_comms_send_initial_telemetry(void) {
     char pub_buf[300] = {0};
     esp_err_t err = json_encode_telemetry(&telemetry, pub_buf, sizeof(pub_buf));
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Enviando telemetria inicial via MQTT...");
-        int msg_id = board_mqtt_publish_uplink(pub_buf, 1); // QoS 1
-        return (msg_id >= 0) ? ESP_OK : ESP_FAIL;
+        ESP_LOGI(TAG, "Enviando telemetria atual via MQTT...");
+        int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
+        
+        if (msg_id < 0) {
+            ESP_LOGW(TAG, "Falha ao enviar telemetria atual. Salvando na FRAM...");
+            app_storage_push_telemetry_log(&telemetry);
+            return ESP_FAIL;
+        }
+
+        // Se enviou a telemetria atual com sucesso, descarrega a fila acumulada na FRAM
+        app_comms_flush_offline_telemetries();
+        return ESP_OK;
     }
 
     return err;
