@@ -72,6 +72,10 @@ explorerAirConditioner/
     │   ├── app_comms.h      # Header for Wi-Fi and MQTT interfaces
     │   ├── app_power.c      # Power Management (Hold Pin, HT8563 Calculators & Shutdown)
     │   ├── app_power.h      # Header for Power Control & Deep Sleep interfaces
+    │   ├── app_ui.h         # Header for Oled User Interface
+    │   ├── app_ui.c         # Oled User Interface Service based in msg mechanism
+    │   ├── app_buttons.h    # Header User interactive menu of learning IR and testing IR
+    │   ├── app_buttons.c    # ser interactive menu of learning IR and testing IR
     │   ├── app_storage.c    # High-level FRAM Abstraction (Schedules, IR Slots, Telemetry Buffer)
     │   └── app_storage.h    # Storage Offsets & FRAM Service API
     ├── app_events.h         # Global Inter-Task Event Definitions & Event Queue Structs
