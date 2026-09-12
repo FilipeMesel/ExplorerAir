@@ -11,7 +11,7 @@ static const char *TAG = "APP_BUTTONS";
 #define GPIO_BTN_ENTER        GPIO_NUM_38
 
 #define POLL_INTERVAL_MS      100
-#define DUAL_HOLD_EXIT_MS     5000 
+#define DUAL_HOLD_EXIT_MS     2000
 
 typedef enum {
     MENU_STATE_MAIN,

@@ -13,6 +13,7 @@ idf_component_register(
         "protocol"
     REQUIRES 
         esp_driver_gpio
+        ir_remote
         board_spi_bus 
         board_i2c_bus 
         fram_mb85rs512t 
