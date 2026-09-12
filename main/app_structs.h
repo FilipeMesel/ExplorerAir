@@ -8,11 +8,12 @@
 /**
  * @brief Tamanhos máximos padrão para credenciais Wi-Fi
  */
-#define WIFI_SSID_MAX_LEN       32
-#define WIFI_PASS_MAX_LEN       64
-#define MAX_SCHEDULE_ITEMS      11  /**< Agendamentos do ID 0 ao ID 10 */
-#define SCHEDULE_TIME_STR_LEN   6   /**< Formato "HH:MM\0" */
-#define DEFAULT_UPDATE_TIME     300 /**< Tempo padrão de sleep (segundos) */
+#define WIFI_SSID_MAX_LEN           32
+#define WIFI_PASS_MAX_LEN           64
+#define MAX_SCHEDULE_ITEMS          11  /**< Agendamentos do ID 0 ao ID 10 */
+#define SCHEDULE_TIME_STR_LEN       6   /**< Formato "HH:MM\0" */
+#define DEFAULT_UPDATE_TIME         300 /**< Tempo padrão de sleep (segundos) */
+#define TELEMETRY_QUEUE_MAX_ITEMS   100 /**< Capacidade da Fila FIFO de Telemetrias na FRAM */
 
 /**
  * @brief Estrutura de configuração salva na FRAM
@@ -104,5 +105,15 @@ typedef struct __attribute__((packed)) {
     uint8_t schedule_id;          /**< ID do agendamento (se reason == WAKEUP_REASON_SCHEDULE) */
     last_action_t pending_action; /**< Ação IR a ser disparada ao acordar */
 } wakeup_context_t;
+
+/**
+ * @brief Cabeçalho de controle do Ring Buffer na FRAM
+ */
+typedef struct __attribute__((packed)) {
+    uint16_t head;  /**< Índice de inserção (0 a TELEMETRY_QUEUE_MAX_ITEMS - 1) */
+    uint16_t tail;  /**< Índice de remoção (0 a TELEMETRY_QUEUE_MAX_ITEMS - 1) */
+    uint16_t count; /**< Quantidade atual de itens (0 a TELEMETRY_QUEUE_MAX_ITEMS) */
+    uint16_t magic; /**< Marcador de integridade (0x5A5A) */
+} telemetry_queue_header_t;
 
 #endif // APP_STRUCTS_H

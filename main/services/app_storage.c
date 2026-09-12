@@ -4,6 +4,10 @@
 
 static const char *TAG = "APP_STORAGE";
 
+#define QUEUE_MAGIC_WORD           0x5A5A
+#define FRAM_ADDR_QUEUE_HEADER     FRAM_ADDR_RING_BUFFER_LOGS
+#define FRAM_ADDR_QUEUE_DATA_START (FRAM_ADDR_RING_BUFFER_LOGS + sizeof(telemetry_queue_header_t))
+
 esp_err_t app_storage_init(void) {
     esp_err_t ret = fram_init();
     if (ret != ESP_OK) {
@@ -117,4 +121,105 @@ esp_err_t app_storage_save_wakeup_context(const wakeup_context_t *ctx) {
 esp_err_t app_storage_get_wakeup_context(wakeup_context_t *ctx) {
     if (!ctx) return ESP_ERR_INVALID_ARG;
     return fram_read(FRAM_ADDR_WAKEUP_CONTEXT, (uint8_t *)ctx, sizeof(wakeup_context_t));
+}
+
+static esp_err_t get_queue_header(telemetry_queue_header_t *header) {
+    if (!header) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t ret = fram_read(FRAM_ADDR_QUEUE_HEADER, (uint8_t *)header, sizeof(telemetry_queue_header_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler cabeçalho da fila FIFO na FRAM.");
+        return ret;
+    }
+
+    if (header->magic != QUEUE_MAGIC_WORD) {
+        ESP_LOGW(TAG, "Cabeçalho FIFO inválido. Formatando fila na FRAM...");
+        header->head = 0;
+        header->tail = 0;
+        header->count = 0;
+        header->magic = QUEUE_MAGIC_WORD;
+
+        ret = fram_write(FRAM_ADDR_QUEUE_HEADER, (const uint8_t *)header, sizeof(telemetry_queue_header_t));
+    }
+
+    return ret;
+}
+
+static esp_err_t save_queue_header(const telemetry_queue_header_t *header) {
+    if (!header) return ESP_ERR_INVALID_ARG;
+    return fram_write(FRAM_ADDR_QUEUE_HEADER, (const uint8_t *)header, sizeof(telemetry_queue_header_t));
+}
+
+esp_err_t app_storage_push_telemetry_log(const telemetry_data_t *log_entry) {
+    if (!log_entry) return ESP_ERR_INVALID_ARG;
+
+    telemetry_queue_header_t header;
+    esp_err_t ret = get_queue_header(&header);
+    if (ret != ESP_OK) return ret;
+
+    // Offset baseado diretamente no sizeof(telemetry_data_t)
+    uint16_t entry_offset = FRAM_ADDR_QUEUE_DATA_START + (header.head * sizeof(telemetry_data_t));
+
+    ret = fram_write(entry_offset, (const uint8_t *)log_entry, sizeof(telemetry_data_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao gravar telemetry_data_t no slot %u", header.head);
+        return ret;
+    }
+
+    header.head = (header.head + 1) % TELEMETRY_QUEUE_MAX_ITEMS;
+
+    if (header.count < TELEMETRY_QUEUE_MAX_ITEMS) {
+        header.count++;
+    } else {
+        header.tail = (header.tail + 1) % TELEMETRY_QUEUE_MAX_ITEMS;
+        ESP_LOGW(TAG, "Fila cheia (%u). Registro mais antigo sobrescrito!", TELEMETRY_QUEUE_MAX_ITEMS);
+    }
+
+    return save_queue_header(&header);
+}
+
+esp_err_t app_storage_pop_telemetry_log(telemetry_data_t *out_entry) {
+    if (!out_entry) return ESP_ERR_INVALID_ARG;
+
+    telemetry_queue_header_t header;
+    esp_err_t ret = get_queue_header(&header);
+    if (ret != ESP_OK) return ret;
+
+    if (header.count == 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    uint16_t entry_offset = FRAM_ADDR_QUEUE_DATA_START + (header.tail * sizeof(telemetry_data_t));
+
+    ret = fram_read(entry_offset, (uint8_t *)out_entry, sizeof(telemetry_data_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao ler telemetry_data_t do slot %u", header.tail);
+        return ret;
+    }
+
+    header.tail = (header.tail + 1) % TELEMETRY_QUEUE_MAX_ITEMS;
+    header.count--;
+
+    return save_queue_header(&header);
+}
+
+esp_err_t app_storage_get_telemetry_log_count(uint16_t *out_count) {
+    if (!out_count) return ESP_ERR_INVALID_ARG;
+
+    telemetry_queue_header_t header;
+    esp_err_t ret = get_queue_header(&header);
+    if (ret == ESP_OK) {
+        *out_count = header.count;
+    }
+    return ret;
+}
+
+esp_err_t app_storage_clear_telemetry_queue(void) {
+    telemetry_queue_header_t header = {
+        .head = 0,
+        .tail = 0,
+        .count = 0,
+        .magic = QUEUE_MAGIC_WORD
+    };
+    return save_queue_header(&header);
 }

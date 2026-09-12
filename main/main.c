@@ -130,7 +130,30 @@ static void app_fsm_task(void *pvParameters) {
                     break;
 
                 case APP_EVENT_WIFI_FAILOVER_EXHAUSTED:
+                {
                     ESP_LOGW(TAG, "[FSM] Falha no Wi-Fi. Solicitando shutdown do sistema...");
+
+                    // Leitura dinâmica do wakeup context salvo na FRAM
+                    wakeup_context_t wakeup_ctx = {0};
+                    last_action_t action = LAST_ACTION_NONE;
+
+                    if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                    {
+                        action = wakeup_ctx.pending_action;
+                    }
+
+                    // Cria a leitura atual para salvar na memória
+                    telemetry_data_t offline_telemetry = {
+                        .temp = 24,
+                        .umid = 58,
+                        .rssi = 0, // Sem Wi-Fi
+                        .battery_mv = 3700,
+                        .last_action = action
+                    };
+                    rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
+
+                    // Salva na fila FIFO da FRAM
+                    app_storage_push_telemetry_log(&offline_telemetry);
 
                     app_ui_post_wifi_error();
                     vTaskDelay(pdMS_TO_TICKS(3000));
@@ -138,6 +161,7 @@ static void app_fsm_task(void *pvParameters) {
                     app_power_shutdown();
 
                     app_power_shutdown();
+                }
                     break;
 
                 case APP_EVENT_MQTT_CONNECTED:
@@ -150,7 +174,7 @@ static void app_fsm_task(void *pvParameters) {
                     if (g_shutdown_timer != NULL)
                     {
                         esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT); // 30s em microssegundos
-                        ESP_LOGI(TAG, "[FSM] Timer de shutdown de %ds iniciado com sucesso.", MQTT_CONNECTED_TIMEOUT);
+                        ESP_LOGI(TAG, "[FSM] Timer de shutdown de %llu us iniciado com sucesso.", MQTT_CONNECTED_TIMEOUT);
                     }
                     break;
 
@@ -158,9 +182,38 @@ static void app_fsm_task(void *pvParameters) {
                     ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
                     app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
                     break;
+                
+                case APP_EVENT_MQTT_DISCONNECTED:
+                {
+                    // Leitura dinâmica do wakeup context salvo na FRAM
+                    wakeup_context_t wakeup_ctx = {0};
+                    last_action_t action = LAST_ACTION_NONE;
+
+                    if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                    {
+                        action = wakeup_ctx.pending_action;
+                    }
+
+                    // Cria a leitura atual para salvar na memória
+                    telemetry_data_t offline_telemetry = {
+                        .temp = 24,
+                        .umid = 58,
+                        .rssi = 0, // Sem Wi-Fi
+                        .battery_mv = 3700,
+                        .last_action = action};
+                    rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
+
+                    // Salva na fila FIFO da FRAM
+                    app_storage_push_telemetry_log(&offline_telemetry);
+
+                    app_ui_post_clear();
+                    app_power_shutdown();
+                    ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
+                    app_power_shutdown();
+                }
+                    break;
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
-                case APP_EVENT_MQTT_DISCONNECTED:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
                     app_ui_post_clear();
                     app_power_shutdown();
