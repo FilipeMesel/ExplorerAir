@@ -260,10 +260,14 @@ esp_err_t app_comms_flush_offline_telemetries(void) {
 
 // Atualização da função de envio inicial
 esp_err_t app_comms_send_initial_telemetry(void) {
+
+    int current_rssi = 0;
+    board_wifi_get_rssi(&current_rssi);
+
     telemetry_data_t telemetry = {
         .temp = 24,
         .umid = 58,
-        .rssi = -65,
+        .rssi = current_rssi,
         .battery_mv = 3700,
         .last_action = get_last_action_from_fram()
     };

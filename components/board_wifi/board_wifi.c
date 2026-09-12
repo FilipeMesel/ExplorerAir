@@ -122,6 +122,25 @@ esp_err_t board_wifi_start_failover_connect(void) {
     return esp_wifi_start();
 }
 
+esp_err_t board_wifi_get_rssi(int *out_rssi) {
+    if (out_rssi == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    wifi_ap_record_t ap_info;
+    esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
+    
+    if (err == ESP_OK) {
+        *out_rssi = (int)ap_info.rssi;
+        ESP_LOGD(TAG, "Current Wi-Fi RSSI: %d dBm", *out_rssi);
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "Failed to get AP info / RSSI (err: 0x%x)", err);
+    *out_rssi = 0; // Fallback value when offline
+    return err;
+}
+
 esp_err_t board_wifi_stop(void) {
     esp_wifi_disconnect();
     return esp_wifi_stop();

@@ -64,6 +64,17 @@ esp_err_t board_wifi_start_failover_connect(void);
  */
 esp_err_t board_wifi_stop(void);
 
+/**
+ * @brief Retrieves the current Wi-Fi RSSI (Received Signal Strength Indicator) in dBm.
+ * 
+ * @param[out] out_rssi Pointer to an integer where the RSSI value (in dBm) will be stored.
+ * @return 
+ *      - ESP_OK: Successfully retrieved RSSI.
+ *      - ESP_ERR_INVALID_ARG: Null pointer provided.
+ *      - ESP_ERR_WIFI_NOT_CONNECT: Device is not currently connected to an AP.
+ */
+esp_err_t board_wifi_get_rssi(int *out_rssi);
+
 #ifdef __cplusplus
 }
 #endif
