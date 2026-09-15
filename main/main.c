@@ -242,7 +242,6 @@ void app_main(void) {
     app_ui_init();
     app_ui_post_header(4200, "v1.0");
     app_ui_post_booting();
-    vTaskDelay(pdMS_TO_TICKS(1500));
 
     init_shutdown_timer();
 
