@@ -9,38 +9,41 @@
 extern "C" {
 #endif
 
+#define MQTT_SEND_INITIAL_TELEMETRY_BUFFER_LEN  300 /**< Send initial telemetry buffer length */
+#define MQTT_ACK_BUFFER_LEN                     256 /**< ACK buffer length */
+
 /**
- * @brief Inicializa a pilha de comunicação (Wi-Fi e MQTT) e registra callbacks de eventos.
- * @return ESP_OK em caso de sucesso.
+ * @brief Initializes the communication stack (Wi-Fi and MQTT) and registers event callbacks.
+ * @return ESP_OK on success.
  */
 esp_err_t app_comms_init(void);
 
 /**
- * @brief Inicia a sequência de conexão Wi-Fi com suporte a failover.
- * @return ESP_OK em caso de sucesso.
+ * @brief Initiates the Wi-Fi connection sequence with failover support.
+ * @return ESP_OK on success.
  */
 esp_err_t app_comms_wifi_start_failover(void);
 
 /**
- * @brief Envia a telemetria inicial simulada via MQTT e posta status na fila global.
- * @return ESP_OK em caso de sucesso.
+ * @brief Sends simulated initial telemetry via MQTT and posts the status to the global queue.
+ * @return ESP_OK on success.
  */
 esp_err_t app_comms_send_initial_telemetry(void);
 
 /**
- * @brief Processa e roteia comandos JSON recebidos via MQTT.
- * @param json_str String JSON recebida no tópico MQTT.
- * @return ESP_OK em caso de sucesso.
+ * @brief Processes and routes JSON commands received via MQTT.
+ * @param json_str JSON string received on the MQTT topic.
+ * @return ESP_OK on success.
  */
 esp_err_t app_comms_process_mqtt_command(const char *json_str);
 
 /**
- * @brief Handler para eventos da pilha Wi-Fi. Posta eventos na g_app_event_queue.
+ * @brief Handler for Wi-Fi stack events. Posts events to g_app_event_queue.
  */
 void app_comms_on_wifi_event(void *handler_args, esp_event_base_t base, int32_t id, void *data);
 
 /**
- * @brief Handler para eventos do cliente MQTT. Posta eventos na g_app_event_queue.
+ * @brief Handler for MQTT client events. Posts events to g_app_event_queue.
  */
 void app_comms_on_mqtt_event(void *handler_args, esp_event_base_t base, int32_t id, void *data);
 
