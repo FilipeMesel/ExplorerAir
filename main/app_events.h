@@ -38,7 +38,7 @@ typedef enum {
 } app_event_type_t;
 
 /**
- * @brief Estrutura unificada de eventos da aplicação.
+ * @brief Unified application event structure.
  */
 typedef struct {
     app_event_type_t type;
@@ -47,7 +47,7 @@ typedef struct {
 } app_event_t;
 
 /**
- * @brief Fila global de eventos para uso desacoplado entre os serviços.
+ * @brief Global event queue for decoupled service interaction.
  */
 extern QueueHandle_t g_app_event_queue;
 
