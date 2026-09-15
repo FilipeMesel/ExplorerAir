@@ -22,7 +22,7 @@ static const char *TAG = "APP_POWER";
 #define BUTTON_POLL_INTERVAL_MS 100
 
 /* =========================================================================
- * FUNÇÕES UTILITÁRIAS DE DATA / TEMPO
+ * DATE/ TIME UTILS FUNCTIONS
  * ========================================================================= */
 
 static time_t rtc_to_epoch(const rtc_date_time_t *dt) {
@@ -63,7 +63,7 @@ static int time_str_to_minutes(const char *time_str) {
 }
 
 /* =========================================================================
- * AUXILIARES DE BOOT & HARDWARE
+ * BOOT & HARDWARE AUXILIAR FUNCTIONS
  * ========================================================================= */
 
 static esp_err_t init_boot_gpios(void) {
@@ -139,7 +139,7 @@ static esp_err_t execute_pending_fram_action(void) {
 }
 
 /* =========================================================================
- * INTERFACE PÚBLICA (APP_POWER)
+ * PUBLIC INTERFACE (APP_POWER)
  * ========================================================================= */
 
 esp_err_t app_power_init(void) {
@@ -153,7 +153,6 @@ esp_err_t app_power_init(void) {
     esp_err_t ret = gpio_config(&pwr_conf);
     if (ret != ESP_OK) return ret;
 
-    // Mantém circuito energizado
     gpio_set_level(GPIO_POWER_HOLD_PIN, 0);
 
     return init_boot_gpios();
