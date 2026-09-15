@@ -15,12 +15,20 @@
 extern "C" {
 #endif
 
+/**
+ * @brief MQTT Event structure
+ *
+ */
 typedef enum {
-    BOARD_MQTT_EVENT_CONNECTED,
-    BOARD_MQTT_EVENT_DISCONNECTED,
-    BOARD_MQTT_EVENT_DATA_RECEIVED
+    BOARD_MQTT_EVENT_CONNECTED,     /**< MQTT EVT Connected */
+    BOARD_MQTT_EVENT_DISCONNECTED,  /**< MQTT EVT Disconnected */
+    BOARD_MQTT_EVENT_DATA_RECEIVED  /**< MQTT EVT Data Received */
 } board_mqtt_event_id_t;
 
+/**
+ * @brief MQTT Data received structure
+ *
+ */
 typedef struct {
     char topic[128];
     char payload[2048];
@@ -31,7 +39,7 @@ ESP_EVENT_DECLARE_BASE(BOARD_MQTT_EVENTS);
 
 /**
  * @brief Initializes MQTT client and generates dynamic MAC topics.
- * 
+ *
  * @param broker_uri MQTT Broker URI (e.g., "mqtt://broker.hivemq.com:1883").
  * @return esp_err_t ESP_OK on success.
  */

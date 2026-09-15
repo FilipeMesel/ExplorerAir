@@ -134,7 +134,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
         case CMD_ID_RTC_SYNC: { // CMD 1: Sync RTC & Telemetry Interval
             cmd1_sync_data_t sync_data = {0};
             if (json_decode_sync(json_str, &sync_data) == ESP_OK) {
-                // Preserva os dados do RTC anterior para fazer o merge de data/hora
+                // Preserves data from the previous RTC to merge the date and time.
                 rtc_date_time_t current_rtc = {0};
                 rtc_ht8563_get_time(&current_rtc);
 
@@ -177,7 +177,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                 creds.is_valid = 1;
 
                 if (app_storage_save_wifi_credentials(&creds) == ESP_OK) {
-                    char ack_buf[256] = {0};
+                    char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};
                     if (json_encode_wifi_ack(&prov, ack_buf, sizeof(ack_buf)) == ESP_OK) {
                         board_mqtt_publish_uplink(ack_buf, 1); // QoS 1
                         ESP_LOGI(TAG, "[MQTT TX] CMD 5 (Wi-Fi ACK) enviado: %s", ack_buf);
@@ -195,7 +195,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
             schedule_payload_t sched = {0};
             if (json_decode_schedule(json_str, &sched) == ESP_OK) {
                 if (app_storage_save_schedule(&sched) == ESP_OK) {
-                    char ack_buf[256] = {0};
+                    char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};
                     if (json_encode_schedule_ack(&sched, ack_buf, sizeof(ack_buf)) == ESP_OK) {
                         board_mqtt_publish_uplink(ack_buf, 1); // QoS 1
                         ESP_LOGI(TAG, "[MQTT TX] CMD 7 (Schedule ACK) enviado: %s", ack_buf);
@@ -224,7 +224,11 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
     return ESP_OK;
 }
 
-// Descarrega todas as telemetrias armazenadas na FRAM via MQTT
+/**
+ * @brief Downloads all telemetry data stored in FRAM via MQTT.
+ *
+ * @return ESP_OK on success.
+ */
 esp_err_t app_comms_flush_offline_telemetries(void) {
     uint16_t pending_count = 0;
     app_storage_get_telemetry_log_count(&pending_count);
@@ -237,7 +241,7 @@ esp_err_t app_comms_flush_offline_telemetries(void) {
     ESP_LOGI(TAG, "Enviando %u telemetria(s) pendente(s) da FRAM...", pending_count);
 
     telemetry_data_t offline_item;
-    char pub_buf[300];
+    char pub_buf[MQTT_SEND_INITIAL_TELEMETRY_BUFFER_LEN];
 
     while (app_storage_pop_telemetry_log(&offline_item) == ESP_OK) {
         memset(pub_buf, 0, sizeof(pub_buf));
@@ -245,20 +249,24 @@ esp_err_t app_comms_flush_offline_telemetries(void) {
         if (json_encode_telemetry(&offline_item, pub_buf, sizeof(pub_buf)) == ESP_OK) {
             int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
             if (msg_id < 0) {
-                // Se falhar a publicação, devolve o item para a FRAM para não perder os dados
+                // If publication fails, return the item to FRAM to avoid losing data.
                 ESP_LOGE(TAG, "Falha no envio MQTT do log offline. Reenfileirando...");
                 app_storage_push_telemetry_log(&offline_item);
                 return ESP_FAIL;
             }
             ESP_LOGI(TAG, "Telemetria offline enviada com sucesso.");
-            vTaskDelay(pdMS_TO_TICKS(100)); // Pequeno delay para evitar sobrecarga na rede
+            vTaskDelay(pdMS_TO_TICKS(100)); // Slight delay to avoid network overload.
         }
     }
 
     return ESP_OK;
 }
 
-// Atualização da função de envio inicial
+/**
+ * @brief Initial submission function update
+ *
+ * @return ESP_OK on success.
+ */
 esp_err_t app_comms_send_initial_telemetry(void) {
 
     int current_rssi = 0;
@@ -274,7 +282,7 @@ esp_err_t app_comms_send_initial_telemetry(void) {
 
     rtc_ht8563_get_time(&telemetry.sync_time_t);
 
-    char pub_buf[300] = {0};
+    char pub_buf[MQTT_SEND_INITIAL_TELEMETRY_BUFFER_LEN] = {0};
     esp_err_t err = json_encode_telemetry(&telemetry, pub_buf, sizeof(pub_buf));
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Enviando telemetria atual via MQTT...");
@@ -286,7 +294,7 @@ esp_err_t app_comms_send_initial_telemetry(void) {
             return ESP_FAIL;
         }
 
-        // Se enviou a telemetria atual com sucesso, descarrega a fila acumulada na FRAM
+        // If the current telemetry was sent successfully, it clears the queue accumulated in the FRAM.
         app_comms_flush_offline_telemetries();
         return ESP_OK;
     }
@@ -295,7 +303,7 @@ esp_err_t app_comms_send_initial_telemetry(void) {
 }
 
 esp_err_t app_comms_init(void) {
-    // Inicialização do cliente MQTT com as configurações da SDK
+    // MQTT client initialization with SDK settings
     esp_err_t err = board_mqtt_init(
         CONFIG_MQTT_BROKER_URI,
         CONFIG_MQTT_BUFFER_SIZE,

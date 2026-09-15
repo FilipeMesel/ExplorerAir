@@ -28,7 +28,7 @@ static const char *TAG = "RTC_HT8563";
 #define TIMER_CLK_4096HZ   0x00
 #define TIMER_CLK_64HZ     0x01
 #define TIMER_CLK_1HZ      0x02
-#define TIMER_CLK_1PER60HZ 0x03  // 1/60 Hz (1 pulso por minuto)
+#define TIMER_CLK_1PER60HZ 0x03  // 1/60 Hz (1 pulse per minute)
 #define TIMER_ENABLE_BIT   0x80  // TE Bit (Bit 7)
 
 static i2c_master_dev_handle_t s_rtc_dev_handle = NULL;
@@ -65,7 +65,7 @@ esp_err_t rtc_ht8563_init(void) {
     }
 
     ESP_LOGI(TAG, "RTC HT8563 inicializado com sucesso (0x%02X)", RTC_I2C_ADDR);
-    // rtc_ht8563_write_reg(REG_CTRL2, 0x00);
+
     return ESP_OK;
 }
 
@@ -146,35 +146,6 @@ esp_err_t rtc_ht8563_set_alarm(uint8_t hour, uint8_t minute) {
     return ESP_OK;
 }
 
-// esp_err_t rtc_ht8563_set_timer(uint8_t seconds) {
-//     uint8_t ctrl2 = 0;
-
-//     // 1. Limpa o registrador Control/Status 2 (Desabilita interrupção, limpa flags TF/AF)
-//     rtc_ht8563_write_reg(REG_CTRL2, 0x00);
-
-//     // 1. Disable the timer for configuration
-//     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x00);
-
-//     // 2. Load the value for the countdown timer
-//     rtc_ht8563_write_reg(REG_TIMER_VAL, seconds);
-
-//     // 3. Enable the Timer (Bit 7 TE = 1) and configure the time base to 1 Hz (Bits 1:0 = 10)
-//     // Bit 3 (TI/TP = 0): Generates a maintained level signal on the /INT pin until cleared via software
-//     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x82);
-
-//     // 4. Habilita a interrupção do Timer no pino INT em MODO PULSO (TI_TP = 1, TIE = 1 -> 0x11)
-//     // Bit 4 (TI_TP = 1) gera pulso temporizado no pino INT
-//     // Bit 0 (TIE = 1) habilita interrupção do Timer
-//     rtc_ht8563_write_reg(REG_CTRL2, 0x11);
-
-//     // 5. Habilita o Timer com frequência base de 1 Hz (TE = 1 [bit 7], TD = 10 [bits 1:0])
-//     // 0x82 -> 1000 0010 (TE=1, TD1=1, TD0=0 -> Clock de 1 Hz)
-//     rtc_ht8563_write_reg(REG_TIMER_CTRL, 0x82);
-
-//     ESP_LOGI(TAG, "Timer Countdown de %ds configurado no RTC.", seconds);
-//     return ESP_OK;
-// }
-
 esp_err_t rtc_ht8563_set_timer(uint32_t seconds) {
     if (seconds == 0) {
         return ESP_ERR_INVALID_ARG;
@@ -183,17 +154,17 @@ esp_err_t rtc_ht8563_set_timer(uint32_t seconds) {
     uint8_t timer_ctrl = 0;
     uint8_t countdown_value = 0;
 
-    // Lógica para chaveamento automático de escala
+    // Logic for automatic range switching
     if (seconds <= 255) {
-        // Usa a base de tempo de 1 Hz (Segundos)
+        // Uses 1 Hz (Seconds) time base
         timer_ctrl = TIMER_CLK_1HZ | TIMER_ENABLE_BIT; // 0x82
         countdown_value = (uint8_t)seconds;
     } 
-    else if (seconds <= (255 * 60)) { // Até 15.300s (255 minutos ou 4.25 horas)
-        // Usa a base de tempo de 1/60 Hz (Minutos)
+    else if (seconds <= (255 * 60)) { // Up to 15,300s (255 minutes or 4.25 hours)
+        // Uses 1/60 Hz time base (Minutes)
         timer_ctrl = TIMER_CLK_1PER60HZ | TIMER_ENABLE_BIT; // 0x83
         
-        // Converte segundos para minutos (arredondando para cima para garantir cobertura mínima)
+        // Converts seconds to minutes (rounding up to ensure minimum coverage)
         uint32_t minutes = (seconds + 59) / 60; 
         if (minutes > 255) minutes = 255;
         
@@ -206,27 +177,27 @@ esp_err_t rtc_ht8563_set_timer(uint32_t seconds) {
 
     board_i2c_bus_lock(100);
 
-    // 1. Limpa o REG_CTRL2 (limpa flags antigas TF/AF e desabilita interrupções anteriores)
+    // 1. Clears REG_CTRL2 (clears old TF/AF flags and disables previous interrupts)
     uint8_t buf_ctrl2_clear[2] = {REG_CTRL2, 0x00};
     esp_err_t ret = i2c_master_transmit(s_rtc_dev_handle, buf_ctrl2_clear, sizeof(buf_ctrl2_clear), 100);
     if (ret != ESP_OK) { board_i2c_bus_unlock(); return ret; }
 
-    // 2. Desabilita temporariamente o Timer para aplicar a nova contagem
+    // 2. Temporarily disables the timer to apply the new count.
     uint8_t buf_timer_disable[2] = {REG_TIMER_CTRL, 0x00};
     ret = i2c_master_transmit(s_rtc_dev_handle, buf_timer_disable, sizeof(buf_timer_disable), 100);
     if (ret != ESP_OK) { board_i2c_bus_unlock(); return ret; }
 
-    // 3. Escreve o valor inicial da contagem regressiva
+    // 3. Writes the initial countdown value.
     uint8_t buf_count[2] = {REG_TIMER_VAL, countdown_value};
     ret = i2c_master_transmit(s_rtc_dev_handle, buf_count, sizeof(buf_count), 100);
     if (ret != ESP_OK) { board_i2c_bus_unlock(); return ret; }
 
-    // 4. Habilita a interrupção do Timer no pino INT em MODO PULSO (TI_TP = 1, TIE = 1 -> 0x11)
+    // 4. Enables the Timer interrupt on the INT pin in PULSE MODE (TI_TP = 1, TIE = 1 -> 0x11)
     uint8_t buf_ctrl2_enable[2] = {REG_CTRL2, 0x11};
     ret = i2c_master_transmit(s_rtc_dev_handle, buf_ctrl2_enable, sizeof(buf_ctrl2_enable), 100);
     if (ret != ESP_OK) { board_i2c_bus_unlock(); return ret; }
 
-    // 5. Liga o Timer ativando o bit TE e definindo a base de frequência (1Hz ou 1/60Hz)
+    // 5. Starts the timer by activating the TE bit and setting the frequency base (1 Hz or 1/60 Hz).
     uint8_t buf_ctrl[2] = {REG_TIMER_CTRL, timer_ctrl};
     ret = i2c_master_transmit(s_rtc_dev_handle, buf_ctrl, sizeof(buf_ctrl), 100);
 

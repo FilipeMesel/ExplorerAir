@@ -9,8 +9,11 @@
 extern "C" {
 #endif
 
+#define DISPLAY_FW_VERSION_LENGTH   8
+#define DISPLAY_LINE_LENGTH         20
+
 /**
- * @brief Tipos de comandos aceitos pela fila do serviço de UI
+ * @brief Types of commands accepted by the UI service queue
  */
 typedef enum {
     UI_CMD_UPDATE_HEADER,
@@ -25,14 +28,14 @@ typedef enum {
 } ui_cmd_type_t;
 
 /**
- * @brief Estrutura da mensagem trafegada na fila da UI
+ * @brief Structure of the message transmitted on the UI queue
  */
 typedef struct {
     ui_cmd_type_t type;
     union {
         struct {
             uint16_t battery_mv;
-            char fw_version[8];
+            char fw_version[DISPLAY_FW_VERSION_LENGTH];
         } header;
         
         struct {
@@ -44,25 +47,25 @@ typedef struct {
         } ir_step;
 
         struct {
-            char line1[20];
-            char line2[20];
+            char line1[DISPLAY_LINE_LENGTH];
+            char line2[DISPLAY_LINE_LENGTH];
             uint32_t display_ms;
         } message;
     } data;
 } ui_msg_t;
 
 /**
- * @brief Inicializa o display, cria a fila do app_ui e dispara a Task UI.
+ * @brief Initializes the display, creates the app_ui queue, and launches the UI Task.
  */
 esp_err_t app_ui_init(void);
 
 /**
- * @brief Finaliza o serviço de UI e destrói recursos.
+ * @brief Terminates the UI service and destroys resources.
  */
 esp_err_t app_ui_deinit(void);
 
 /* =========================================================================
- * APIs Thread-Safe para envio de mensagens à UI
+ * APIs Thread-safe for sending messages to the UI
  * ========================================================================= */
 
 esp_err_t app_ui_post_header(uint16_t battery_mv, const char *fw_version);
