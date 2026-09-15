@@ -15,6 +15,7 @@
 #define DEFAULT_UPDATE_TIME         300 /**< Default tellemetry update time (seconds) */
 #define TELEMETRY_QUEUE_MAX_ITEMS   100 /**< Telemetry FIFO Queue Capacity in FRAM */
 #define FRAM_RESERVED_BYTES         30 /**< Number of bytes reserved for future fram expansions */
+#define APP_MAIN_EVT_QUEUE          10 /**< APP_MAIN Evt Queue allocation */
 
 /**
  * @brief Configuration structure saved in FRAM

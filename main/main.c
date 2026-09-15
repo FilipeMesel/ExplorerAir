@@ -51,7 +51,7 @@ static void init_shutdown_timer(void) {
 static esp_err_t board_hardware_init(void) {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-    // Inicializa gerenciador de energia (HOLD pin + BTNs)
+    // Initializes power manager (HOLD pin + BTNs)
     esp_err_t ret = app_power_init();
     if (ret != ESP_OK) return ret;
 
@@ -83,12 +83,11 @@ static esp_err_t board_hardware_init(void) {
     return ESP_OK;
 }
 
-// Subtarefa 5.3: Refatoração da FSM principal para consumo de eventos desacoplados
 static void app_fsm_task(void *pvParameters) {
    app_event_t current_evt;
     boot_event_t boot_cause = EVENT_BOOT_POWER_ON;
     
-    // Tenta analisar o boot; se falhar, assume Power-On normal
+    // Attempts to analyze the boot process; if it fails, it assumes a normal power-on.
     if (app_power_analyze_boot(&boot_cause) != ESP_OK) {
         ESP_LOGW(TAG, "Falha ao analisar o boot cause. Assumindo Boot padrão.");
     }
@@ -133,7 +132,7 @@ static void app_fsm_task(void *pvParameters) {
                 {
                     ESP_LOGW(TAG, "[FSM] Falha no Wi-Fi. Solicitando shutdown do sistema...");
 
-                    // Leitura dinâmica do wakeup context salvo na FRAM
+                    // Dynamic reading of the wakeup context saved in FRAM
                     wakeup_context_t wakeup_ctx = {0};
                     last_action_t action = LAST_ACTION_NONE;
 
@@ -142,7 +141,7 @@ static void app_fsm_task(void *pvParameters) {
                         action = wakeup_ctx.pending_action;
                     }
 
-                    // Cria a leitura atual para salvar na memória
+                    // Captures the current reading to save to memory.
                     telemetry_data_t offline_telemetry = {
                         .temp = 24,
                         .umid = 58,
@@ -152,7 +151,7 @@ static void app_fsm_task(void *pvParameters) {
                     };
                     rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
 
-                    // Salva na fila FIFO da FRAM
+                    // Save to the FRAM FIFO queue.
                     app_storage_push_telemetry_log(&offline_telemetry);
 
                     app_ui_post_wifi_error();
@@ -185,7 +184,7 @@ static void app_fsm_task(void *pvParameters) {
                 
                 case APP_EVENT_MQTT_DISCONNECTED:
                 {
-                    // Leitura dinâmica do wakeup context salvo na FRAM
+                    // Dynamic reading of the wakeup context saved in FRAM
                     wakeup_context_t wakeup_ctx = {0};
                     last_action_t action = LAST_ACTION_NONE;
 
@@ -194,16 +193,16 @@ static void app_fsm_task(void *pvParameters) {
                         action = wakeup_ctx.pending_action;
                     }
 
-                    // Cria a leitura atual para salvar na memória
+                    // Captures the current reading to save to memory.
                     telemetry_data_t offline_telemetry = {
                         .temp = 24,
                         .umid = 58,
-                        .rssi = 0, // Sem Wi-Fi
+                        .rssi = 0, // No Wi-Fi
                         .battery_mv = 3700,
                         .last_action = action};
                     rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
 
-                    // Salva na fila FIFO da FRAM
+                    // Save to the FRAM FIFO queue.
                     app_storage_push_telemetry_log(&offline_telemetry);
 
                     app_ui_post_clear();
@@ -231,8 +230,8 @@ static void app_fsm_task(void *pvParameters) {
 
 void app_main(void) {
 
-    // Alocação da fila de eventos principal no app_main()
-    g_app_event_queue = xQueueCreate(10, sizeof(app_event_t));
+    // Allocation of the main event queue in app_main()
+    g_app_event_queue = xQueueCreate(APP_MAIN_EVT_QUEUE, sizeof(app_event_t));
     if (g_app_event_queue == NULL) {
         ESP_LOGE(TAG, "Falha ao criar a fila global de eventos!");
         return;
