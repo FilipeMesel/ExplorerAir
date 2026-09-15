@@ -77,7 +77,7 @@ esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Leitura dos campos do JSON
+    // Read JSON's fields
     cJSON *hour             = cJSON_GetObjectItemCaseSensitive(root, "hour");
     cJSON *minute           = cJSON_GetObjectItemCaseSensitive(root, "min");
     cJSON *second           = cJSON_GetObjectItemCaseSensitive(root, "sec");
@@ -87,28 +87,28 @@ esp_err_t json_decode_sync(const char *json_str, cmd1_sync_data_t *out_data)
     cJSON *year             = cJSON_GetObjectItemCaseSensitive(root, "year");
     cJSON *telemetry_update = cJSON_GetObjectItemCaseSensitive(root, "telemetry_update");
 
-    // Validação dos campos obrigatórios do horário
+    // Field's validation
     if (!cJSON_IsNumber(hour) || !cJSON_IsNumber(minute) || !cJSON_IsNumber(second)) {
         cJSON_Delete(root);
         return ESP_FAIL;
     }
 
-    // Preenchimento do horário e dia da semana
+    // Entering the time and day of the week
     out_data->sync_time_t.hour    = (uint8_t)hour->valueint;
     out_data->sync_time_t.minute  = (uint8_t)minute->valueint;
     out_data->sync_time_t.second  = (uint8_t)second->valueint;
     out_data->sync_time_t.weekday = cJSON_IsNumber(weekday) ? (uint8_t)weekday->valueint : 0;
 
-    // Preenchimento da data (com fallback para 0 caso ausente)
+    // Date filling (with fallback to 0 if missing)
     out_data->sync_time_t.day     = cJSON_IsNumber(day)   ? (uint8_t)day->valueint   : 0;
     out_data->sync_time_t.month   = cJSON_IsNumber(month) ? (uint8_t)month->valueint : 0;
     out_data->sync_time_t.year    = cJSON_IsNumber(year)  ? (uint16_t)year->valueint : 0;
 
-    // Decodificação do novo campo: telemetry_update (em segundos)
+    // Decoding the new field: telemetry_update (in seconds)
     if (cJSON_IsNumber(telemetry_update)) {
         out_data->telemetry_update = telemetry_update->valueint;
     } else {
-        // Valor padrão de segurança (ex: 300s = 5 min) se o campo não vier no JSON
+        // Default security value (e.g., 300s = 5 min) if the field is missing from the JSON.
         out_data->telemetry_update = DEFAULT_UPDATE_TIME;
     }
 
