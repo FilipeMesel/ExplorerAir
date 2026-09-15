@@ -26,7 +26,7 @@ static uint8_t convert_mv_to_percentage(uint16_t battery_mv) {
 }
 
 /**
- * @brief Task consumidora dedicada exclusivamente a desenhar na tela
+ * @brief Consumer task dedicated exclusively to drawing on the screen.
  */
 static void app_ui_task(void *pvParameters) {
     ui_msg_t msg;
@@ -83,7 +83,7 @@ static void app_ui_task(void *pvParameters) {
 }
 
 /* =========================================================================
- * INICIALIZAÇÃO & DEINIT
+ * INITIALIZATION & DEINIT
  * ========================================================================= */
 
 esp_err_t app_ui_init(void) {
@@ -127,7 +127,7 @@ esp_err_t app_ui_deinit(void) {
 }
 
 /* =========================================================================
- * IMPLEMENTAÇÃO DAS APIS POST (THREAD-SAFE)
+ * IMPLEMENTATION OF POST APIs (THREAD-SAFE)
  * ========================================================================= */
 
 static esp_err_t send_to_ui_queue(const ui_msg_t *msg) {
