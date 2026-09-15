@@ -4,5 +4,5 @@ idf_component_register(
     PRIV_REQUIRES soc esp_rom hal
 )
 
-# FORÇA o sistema a embutir o binário inteiro do hook, sem descartar funções soltas
+# Forces the system to embed the entire hook binary, without discarding unused functions.
 idf_component_set_property(${COMPONENT_NAME} WHOLE_ARCHIVE 1)
