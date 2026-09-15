@@ -240,7 +240,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(board_hardware_init());
 
     app_ui_init();
-    app_ui_post_header(4200, "v1.0");
+    app_ui_post_header(4200, "FW 1.0");
     app_ui_post_booting();
 
     init_shutdown_timer();
