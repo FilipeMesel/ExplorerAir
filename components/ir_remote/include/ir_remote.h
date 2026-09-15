@@ -10,42 +10,41 @@
 extern "C" {
 #endif
 
-// Definições de hardware para o driver RMT
-#define IR_RESOLUTION_HZ    1000000 // 1 MHz (resolução de 1 us)
-#define CARRIER_FREQ_HZ     38000   // 38 kHz para IR padrão
+#define IR_RESOLUTION_HZ    1000000 // 1 MHz (resolution in 1 us)
+#define CARRIER_FREQ_HZ     38000   // 38 kHz for a default IR
 #define MAX_BUFFER_SYMBOLS  350     
-#define MAX_IR_BUFFER_SIZE  700     // Tamanho máximo do buffer de durações RAW
+#define MAX_IR_BUFFER_SIZE  700     // Maximum raw buffer length
 
 /**
- * @brief Estrutura com os tempos (marca/espaço em us) da onda IR
+ * @brief Structure with the timings (mark/space in µs) of the IR waveform
  */
 typedef struct {
-    uint16_t data[MAX_IR_BUFFER_SIZE]; /**< Tempos dos pulsos em microssegundos */
-    uint16_t length;                  /**< Quantidade total de elementos no array data */
+    uint16_t data[MAX_IR_BUFFER_SIZE];  /**< Pulse timings in microseconds */
+    uint16_t length;                    /**< Total number of elements in the data array */
 } ir_raw_command_t;
 
 /**
- * @brief Inicializa os canais de TX e RX do RMT para infravermelho.
+ * @brief Initializes the RMT TX and RX channels for infrared.
  * 
- * @param gpio_tx pino GPIO de transmissão
- * @param gpio_rx pino GPIO de recepção
- * @return esp_err_t ESP_OK em caso de sucesso
+ * @param gpio_tx transmit GPIO pin
+ * @param gpio_rx GPIO receive pin
+ * @return esp_err_t ESP_OK in case of success
  */
 esp_err_t ir_remote_init(int gpio_tx, int gpio_rx);
 
 /**
- * @brief Lê o último comando recebido pela fila do RMT (Não-bloqueante).
+ * @brief Reads the last command received by the RMT queue (non-blocking).
  * 
- * @param[out] cmd_out Ponteiro para a estrutura onde o comando RAW será salvo.
- * @return esp_err_t ESP_OK se leu um comando válido, ESP_ERR_NOT_FOUND se não houver dados.
+ * @param[out] cmd_out Pointer to the structure where the RAW command will be saved.
+ * @return esp_err_t ESP_OK if a valid command was read, ESP_ERR_NOT_FOUND if there is no data.
  */
 esp_err_t ir_remote_read_last_command(ir_raw_command_t *cmd_out);
 
 /**
- * @brief Transmite uma forma de onda IR RAW.
+ * @brief Transmits a raw IR waveform.
  * 
- * @param[in] cmd Ponteiro para a estrutura com os tempos em us.
- * @return esp_err_t ESP_OK em caso de sucesso na transmissão.
+ * @param[in] cmd Pointer to the structure containing times in microseconds.
+ * @return esp_err_t ESP_OK in the event of a successful transmission.
  */
 esp_err_t ir_remote_send_command(const ir_raw_command_t *cmd);
 

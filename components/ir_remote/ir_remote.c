@@ -32,7 +32,7 @@ esp_err_t ir_remote_init(int gpio_tx, int gpio_rx) {
         return ESP_ERR_NO_MEM;
     }
 
-    // Configuração do Canal RX
+    // Rx channel configuration
     rmt_rx_channel_config_t rx_chan_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = gpio_rx,
@@ -46,10 +46,10 @@ esp_err_t ir_remote_init(int gpio_tx, int gpio_rx) {
     ESP_ERROR_CHECK(rmt_rx_register_event_callbacks(s_rx_channel, &cbs, NULL));
     ESP_ERROR_CHECK(rmt_enable(s_rx_channel));
 
-    // Inicia primeira recepção
+    // Starts first reception
     ESP_ERROR_CHECK(rmt_receive(s_rx_channel, s_rx_raw_symbols, sizeof(s_rx_raw_symbols), &s_rx_config));
 
-    // Configuração do Canal TX
+    // TX Channel Configuration
     rmt_tx_channel_config_t tx_chan_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = gpio_tx,
