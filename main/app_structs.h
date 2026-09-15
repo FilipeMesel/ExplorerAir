@@ -6,25 +6,26 @@
 #include "rtc_ht8563.h"
 
 /**
- * @brief Tamanhos máximos padrão para credenciais Wi-Fi
+ * @brief Standard maximum sizes for Wi-Fi credentials
  */
-#define WIFI_SSID_MAX_LEN           32
-#define WIFI_PASS_MAX_LEN           64
-#define MAX_SCHEDULE_ITEMS          11  /**< Agendamentos do ID 0 ao ID 10 */
-#define SCHEDULE_TIME_STR_LEN       6   /**< Formato "HH:MM\0" */
-#define DEFAULT_UPDATE_TIME         300 /**< Tempo padrão de sleep (segundos) */
-#define TELEMETRY_QUEUE_MAX_ITEMS   100 /**< Capacidade da Fila FIFO de Telemetrias na FRAM */
+#define WIFI_SSID_MAX_LEN           32  /**< WIFI SSID Maximum length */
+#define WIFI_PASS_MAX_LEN           64  /**< WIFI PASSWORD Maximum length */
+#define MAX_SCHEDULE_ITEMS          11  /**< Schedules from ID 0 to ID 10 */
+#define SCHEDULE_TIME_STR_LEN       6   /**< "HH:MM\0" format */
+#define DEFAULT_UPDATE_TIME         300 /**< Default tellemetry update time (seconds) */
+#define TELEMETRY_QUEUE_MAX_ITEMS   100 /**< Telemetry FIFO Queue Capacity in FRAM */
+#define FRAM_RESERVED_BYTES         30 /**< Number of bytes reserved for future fram expansions */
 
 /**
- * @brief Estrutura de configuração salva na FRAM
+ * @brief Configuration structure saved in FRAM
  */
 typedef struct {
-    uint16_t telemetry_interval_sec; /**< Intervalo de envio em segundos */
-    uint8_t reserved[30];            /**< Espaço reservado para expansões futuras */
+    uint16_t telemetry_interval_sec;                    /**< Sending interval in seconds */
+    uint8_t reserved[FRAM_RESERVED_BYTES];              /**< Space reserved for future expansions */
 } sys_config_t;
 
 /**
- * @brief Estrutura para o payload do CMD 1 (Sync RTC & Telemetria)
+ * @brief Structure for the CMD 1 payload (Sync RTC & Telemetry)
  */
 typedef struct {
     int cmd_id;
@@ -33,7 +34,7 @@ typedef struct {
 } cmd1_sync_data_t;
 
 /**
- * @brief Enumeration of Last Actions (Comandos de Infravermelho)
+ * @brief Enumeration of Last Actions (Infrared Commands)
  */
 typedef enum {
     LAST_ACTION_NONE            = 0,
@@ -51,11 +52,11 @@ typedef enum {
 } last_action_t;
 
 /**
- * @brief Razão do próximo wakeup do sistema
+ * @brief Reason for the next system wakeup
  */
 typedef enum {
     WAKEUP_REASON_TELEMETRY = 0,
-    WAKEUP_REASON_SCHEDULE  = 1
+    WAKEUP_REASON_SCHEDULE
 } wakeup_reason_t;
 
 /**
@@ -71,16 +72,16 @@ typedef struct {
 } telemetry_data_t;
 
 /**
- * @brief Estrutura de Credenciais Wi-Fi persistida na FRAM
+ * @brief Wi-Fi credentials structure persisted in FRAM
  */
 typedef struct __attribute__((packed)) {
     char ssid[WIFI_SSID_MAX_LEN];
     char password[WIFI_PASS_MAX_LEN];
-    uint8_t is_valid; /**< Flag de controle (1 = Credencial Válida/Salva, 0 = Vazia) */
+    uint8_t is_valid;                   /**< Control flag (1 = Valid/Saved Credential, 0 = Empty) */
 } wifi_credentials_t;
 
 /**
- * @brief Estrutura para payload do CMD 4 / CMD 5
+ * @brief Payload structure for CMD 4 / CMD 5
  */
 typedef struct {
     char ssid[WIFI_SSID_MAX_LEN];
@@ -88,32 +89,32 @@ typedef struct {
 } wifi_prov_payload_t;
 
 /**
- * @brief Estrutura que representa o payload do Agendamento (CMD 6 / CMD 7)
+ * @brief Structure representing the scheduling payload (CMD 6 / CMD 7)
  */
 typedef struct {
-    uint8_t schedule_id;                 /**< ID do agendamento (0 a 10) */
-    uint8_t week_days;                   /**< Máscara de bits dos dias + enable bit (LSB) */
-    char time[SCHEDULE_TIME_STR_LEN];    /**< String no formato "HH:MM" */
-    last_action_t action;                /**< Ação enviada no agendamento */
+    uint8_t schedule_id;                 /**< Schedule ID (0 to 10) */
+    uint8_t week_days;                   /**< Bitmask of days + enable bit (LSB) */
+    char time[SCHEDULE_TIME_STR_LEN];    /**< "HH:MM" String */
+    last_action_t action;                /**< Action submitted via scheduling */
 } schedule_payload_t;
 
 /**
- * @brief Estrutura que guarda a intenção/contexto do próximo wakeup na FRAM
+ * @brief Structure that stores the intention/context of the next wakeup in FRAM.
  */
 typedef struct __attribute__((packed)) {
     wakeup_reason_t reason;
-    uint8_t schedule_id;          /**< ID do agendamento (se reason == WAKEUP_REASON_SCHEDULE) */
-    last_action_t pending_action; /**< Ação IR a ser disparada ao acordar */
+    uint8_t schedule_id;          /**< Schedule ID (if reason == WAKEUP_REASON_SCHEDULE) */
+    last_action_t pending_action; /**< IR action to be triggered upon waking up */
 } wakeup_context_t;
 
 /**
- * @brief Cabeçalho de controle do Ring Buffer na FRAM
+ * @brief Ring Buffer control header in FRAM
  */
 typedef struct __attribute__((packed)) {
-    uint16_t head;  /**< Índice de inserção (0 a TELEMETRY_QUEUE_MAX_ITEMS - 1) */
-    uint16_t tail;  /**< Índice de remoção (0 a TELEMETRY_QUEUE_MAX_ITEMS - 1) */
-    uint16_t count; /**< Quantidade atual de itens (0 a TELEMETRY_QUEUE_MAX_ITEMS) */
-    uint16_t magic; /**< Marcador de integridade (0x5A5A) */
+    uint16_t head;  /**< Insertion index (0 to TELEMETRY_QUEUE_MAX_ITEMS - 1) */
+    uint16_t tail;  /**< Removal index (0 to TELEMETRY_QUEUE_MAX_ITEMS - 1) */
+    uint16_t count; /**< Current number of items (0 to TELEMETRY_QUEUE_MAX_ITEMS) */
+    uint16_t magic; /**< Integrity marker (0x5A5A) */
 } telemetry_queue_header_t;
 
 #endif // APP_STRUCTS_H
