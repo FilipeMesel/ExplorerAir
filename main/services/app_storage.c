@@ -1,5 +1,5 @@
 #include "app_storage.h"
-#include "fram_mb85rs512t.h" // Driver SPI para a memória FRAM MB85RS512T
+#include "fram_mb85rs512t.h"
 #include "esp_log.h"
 
 static const char *TAG = "APP_STORAGE";
@@ -21,17 +21,17 @@ esp_err_t app_storage_init(void) {
 esp_err_t app_storage_save_telemetry_interval(uint16_t interval_sec) {
     sys_config_t config = {0};
 
-    // 1. Lê o bloco atual na FRAM
+    // 1. Reads the current block from FRAM.
     esp_err_t ret = fram_read(FRAM_ADDR_SYS_CONFIG, (uint8_t *)&config, sizeof(sys_config_t));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Erro ao ler bloco de configuracao na FRAM.");
         return ret;
     }
 
-    // 2. Atualiza apenas o campo do intervalo
+    // 2. Updates only the interval field.
     config.telemetry_interval_sec = interval_sec;
 
-    // 3. Escreve de volta na FRAM
+    // 3. Write back on FRAM
     ret = fram_write(FRAM_ADDR_SYS_CONFIG, (const uint8_t *)&config, sizeof(sys_config_t));
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Novo intervalo de telemetria salvo na FRAM: %u seg", interval_sec);
@@ -157,7 +157,7 @@ esp_err_t app_storage_push_telemetry_log(const telemetry_data_t *log_entry) {
     esp_err_t ret = get_queue_header(&header);
     if (ret != ESP_OK) return ret;
 
-    // Offset baseado diretamente no sizeof(telemetry_data_t)
+    // Offset based directly on sizeof(telemetry_data_t)
     uint16_t entry_offset = FRAM_ADDR_QUEUE_DATA_START + (header.head * sizeof(telemetry_data_t));
 
     ret = fram_write(entry_offset, (const uint8_t *)log_entry, sizeof(telemetry_data_t));
