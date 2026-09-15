@@ -138,45 +138,6 @@ esp_err_t fram_run_tests(void) {
         test_passed = false;
     }
 
-    // Test 2: Configuration Memory Section Write/Read
-    // const char write_config[] = "CONFIG_IR_BLASTER_V1";
-    // char read_config[30] = {0};
-
-    // ESP_LOGI(TAG, "[TESTE 2] Escrevendo na Seção de Configuração...");
-    // if (fram_write_config((uint8_t *)write_config, strlen(write_config)) == ESP_OK) {
-    //     fram_read_config((uint8_t *)read_config, strlen(write_config));
-    //     ESP_LOGI(TAG, "[TESTE 2] Lido: %s", read_config);
-
-    //     if (strcmp(write_config, read_config) == 0) {
-    //         ESP_LOGI(TAG, "[TESTE 2] PASSOU: Leitura/Escrita de Configuração OK!");
-    //     } else {
-    //         ESP_LOGE(TAG, "[TESTE 2] FALHOU: Dados divergentes!");
-    //         test_passed = false;
-    //     }
-    // } else {
-    //     ESP_LOGE(TAG, "[TESTE 2] FALHOU ao escrever configuração");
-    //     test_passed = false;
-    // }
-
-    // Test 3: Telemetry Ring Buffer Section
-    // uint8_t telemetry_data[4] = {0xDE, 0xAD, 0xBE, 0xEF};
-    // uint8_t telemetry_read[4] = {0};
-
-    // ESP_LOGI(TAG, "[TESTE 3] Escrevendo Telemetria no Ring Buffer...");
-    // if (fram_write_telemetry_ring(0x00, telemetry_data, sizeof(telemetry_data)) == ESP_OK) {
-    //     fram_read_telemetry_ring(0x00, telemetry_read, sizeof(telemetry_read));
-
-    //     if (memcmp(telemetry_data, telemetry_read, sizeof(telemetry_data)) == 0) {
-    //         ESP_LOGI(TAG, "[TESTE 3] PASSOU: Ring Buffer de Telemetria OK!");
-    //     } else {
-    //         ESP_LOGE(TAG, "[TESTE 3] FALHOU: Falha na validação da Telemetria!");
-    //         test_passed = false;
-    //     }
-    // } else {
-    //     ESP_LOGE(TAG, "[TESTE 3] FALHOU ao escrever no Ring Buffer");
-    //     test_passed = false;
-    // }
-
     ESP_LOGI(TAG, "=================================================");
     return test_passed ? ESP_OK : ESP_FAIL;
 }
