@@ -19,9 +19,9 @@
 extern "C" {
 #endif
 
-#define BOARD_I2C_SDA_PIN       23          /**< Pin do SDA from I2C Bus */
-#define BOARD_I2C_SCL_PIN       18          /**< Pin do SCL from I2C Bus */
-#define BOARD_I2C_PORT_NUM      I2C_NUM_0   /**< Número do port from I2C Bus */
+#define BOARD_I2C_SDA_PIN       23          /**< SDA GPIO Pin from I2C Bus */
+#define BOARD_I2C_SCL_PIN       18          /**< SCL GPIO Pin from I2C Bus */
+#define BOARD_I2C_PORT_NUM      I2C_NUM_0   /**< I2C Bus port number */
 
 /**
  * @brief Initialize the I2C Master Bus shared and protection by mutex.
