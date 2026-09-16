@@ -223,3 +223,67 @@ esp_err_t app_storage_clear_telemetry_queue(void) {
     };
     return save_queue_header(&header);
 }
+
+/* Função auxiliar privada para calcular o endereço base de um slot */
+static uint16_t calculate_ir_slot_address(uint8_t action_idx)
+{
+    return FRAM_ADDR_IR_RAW_DATA + (action_idx * IR_SLOT_SIZE_BYTES);
+}
+
+esp_err_t app_storage_save_ir_command(uint8_t action_idx, const ir_raw_command_t *cmd)
+{
+    if (action_idx >= IR_SLOT_COUNT || cmd == NULL) {
+        ESP_LOGE(TAG, "Parâmetro inválido para gravação IR: slot %d", action_idx);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Valida se a struct não excede o tamanho reservado por slot
+    if (sizeof(ir_raw_command_t) > IR_SLOT_SIZE_BYTES) {
+        ESP_LOGE(TAG, "Tamanho do comando IR (%d B) excede limite do slot (%d B)", 
+                 (int)sizeof(ir_raw_command_t), IR_SLOT_SIZE_BYTES);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint16_t fram_address = calculate_ir_slot_address(action_idx);
+
+    ESP_LOGI(TAG, "Salvando comando IR no Slot %d (Addr FRAM: 0x%04X, Pulsos: %d)", 
+             action_idx, fram_address, cmd->length);
+
+    // Substitua pela sua chamada nativa/driver de escrita em FRAM I2C
+    // Exemplo: fram_write_bytes(fram_address, (uint8_t *)cmd, sizeof(ir_raw_command_t));
+    esp_err_t ret = fram_write(fram_address, (const uint8_t *)cmd, sizeof(ir_raw_command_t));
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao gravar slot IR %d na FRAM (err: %s)", action_idx, esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+esp_err_t app_storage_get_ir_command(uint8_t action_idx, ir_raw_command_t *out_cmd)
+{
+    if (action_idx >= IR_SLOT_COUNT || out_cmd == NULL) {
+        ESP_LOGE(TAG, "Parâmetro inválido para leitura IR: slot %d", action_idx);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t fram_address = calculate_ir_slot_address(action_idx);
+
+    // Substitua pela sua chamada nativa/driver de leitura em FRAM I2C
+    // Exemplo: fram_read_bytes(fram_address, (uint8_t *)out_cmd, sizeof(ir_raw_command_t));
+    esp_err_t ret = fram_read(fram_address, (uint8_t *)out_cmd, sizeof(ir_raw_command_t));
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler slot IR %d da FRAM (err: %s)", action_idx, esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Validação básica se há um comando válido retornado
+    if (out_cmd->length == 0 || out_cmd->length > MAX_IR_BUFFER_SIZE) {
+        ESP_LOGW(TAG, "Slot IR %d lido está vazio ou corrompido (length: %d)", action_idx, out_cmd->length);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ESP_LOGI(TAG, "Comando IR do Slot %d lido com sucesso (Pulsos: %d)", action_idx, out_cmd->length);
+    return ESP_OK;
+}

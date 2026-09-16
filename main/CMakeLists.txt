@@ -6,6 +6,7 @@ idf_component_register(
         "services/app_comms.c"
         "services/app_ui.c"
         "services/app_buttons.c"
+        "services/app_ir.c"
         "protocol/json_protocol.c"
     INCLUDE_DIRS 
         "."

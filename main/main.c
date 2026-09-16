@@ -18,6 +18,7 @@
 #include "services/app_power.h"
 #include "services/app_ui.h"
 #include "services/app_buttons.h"
+#include "services/app_ir.h"
 
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
@@ -69,6 +70,9 @@ static esp_err_t board_hardware_init(void) {
     if (ret != ESP_OK) return ret;
 
     ret = app_storage_init();
+    if (ret != ESP_OK) return ret;
+
+    ret = app_ir_init();
     if (ret != ESP_OK) return ret;
 
     ret = oled_init(OLED_I2C_ADDR_DEFAULT);

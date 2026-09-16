@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "rtc_ht8563.h"
+#include "ir_remote.h"
 
 /**
  * @brief Standard maximum sizes for Wi-Fi credentials
@@ -16,6 +17,26 @@
 #define TELEMETRY_QUEUE_MAX_ITEMS   100 /**< Telemetry FIFO Queue Capacity in FRAM */
 #define FRAM_RESERVED_BYTES         30 /**< Number of bytes reserved for future fram expansions */
 #define APP_MAIN_EVT_QUEUE          10 /**< APP_MAIN Evt Queue allocation */
+
+#define IR_SLOT_COUNT               10      // Ações 0 a 9 (DESLIGAR, LIGAR, 18°C ... 25°C)
+#define IR_SLOT_SIZE_BYTES          3072    // 3 KB alocados por slot na FRAM
+
+/**
+ * @brief Enum para indexação legível dos slots IR
+ */
+typedef enum {
+    IR_SLOT_OFF = 0,
+    IR_SLOT_ON_GENERIC,
+    IR_SLOT_TEMP_18,
+    IR_SLOT_TEMP_19,
+    IR_SLOT_TEMP_20,
+    IR_SLOT_TEMP_21,
+    IR_SLOT_TEMP_22,
+    IR_SLOT_TEMP_23,
+    IR_SLOT_TEMP_24,
+    IR_SLOT_TEMP_25,
+    IR_SLOT_MAX
+} ir_action_slot_t;
 
 /**
  * @brief Configuration structure saved in FRAM
