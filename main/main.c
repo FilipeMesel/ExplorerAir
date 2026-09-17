@@ -162,8 +162,6 @@ static void app_fsm_task(void *pvParameters) {
                     vTaskDelay(pdMS_TO_TICKS(3000));
                     app_ui_post_clear();
                     app_power_shutdown();
-
-                    app_power_shutdown();
                 }
                     break;
 
@@ -210,7 +208,6 @@ static void app_fsm_task(void *pvParameters) {
                     app_storage_push_telemetry_log(&offline_telemetry);
 
                     app_ui_post_clear();
-                    app_power_shutdown();
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
                 }
@@ -219,7 +216,6 @@ static void app_fsm_task(void *pvParameters) {
                 case APP_EVENT_TIMER_SET_SUCCESS:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
                     app_ui_post_clear();
-                    app_power_shutdown();
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
                     break;
