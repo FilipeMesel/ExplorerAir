@@ -181,7 +181,13 @@ static void app_fsm_task(void *pvParameters) {
 
                 case APP_EVENT_MQTT_DATA_RECEIVED:
                     ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
-                    app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
+                    if (current_evt.mqtt_data.payload != NULL) {
+
+                        app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
+
+                        free(current_evt.mqtt_data.payload);
+                        current_evt.mqtt_data.payload = NULL;
+                    }
                     break;
                 
                 case APP_EVENT_MQTT_DISCONNECTED:
@@ -245,5 +251,5 @@ void app_main(void) {
 
     init_shutdown_timer();
 
-    xTaskCreate(app_fsm_task, "app_fsm_task", 8192, NULL, 5, NULL);
+    xTaskCreate(app_fsm_task, "app_fsm_task", 12288, NULL, 5, NULL);
 }

@@ -49,13 +49,25 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             esp_event_post(BOARD_MQTT_EVENTS, BOARD_MQTT_EVENT_DISCONNECTED, NULL, 0, portMAX_DELAY);
             break;
 
-        case MQTT_EVENT_DATA: {
+        case MQTT_EVENT_DATA:
+        {
             board_mqtt_data_t incoming_data = {0};
             snprintf(incoming_data.topic, sizeof(incoming_data.topic), "%.*s", event->topic_len, event->topic);
-            snprintf(incoming_data.payload, sizeof(incoming_data.payload), "%.*s", event->data_len, event->data);
-            incoming_data.payload_len = event->data_len;
 
-            esp_event_post(BOARD_MQTT_EVENTS, BOARD_MQTT_EVENT_DATA_RECEIVED, &incoming_data, sizeof(board_mqtt_data_t), portMAX_DELAY);
+            incoming_data.payload_len = event->data_len;
+            incoming_data.payload = malloc(event->data_len + 1); // Aloca espaço exato + '\0'
+
+            if (incoming_data.payload)
+            {
+                memcpy(incoming_data.payload, event->data, event->data_len);
+                incoming_data.payload[event->data_len] = '\0';
+
+                esp_event_post(BOARD_MQTT_EVENTS, BOARD_MQTT_EVENT_DATA_RECEIVED, &incoming_data, sizeof(board_mqtt_data_t), portMAX_DELAY);
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Falha ao alocar memória para o payload MQTT (%d bytes)", event->data_len);
+            }
             break;
         }
         default:

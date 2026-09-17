@@ -12,7 +12,7 @@
 #define FRAM_ADDR_SCHEDULE_TABLE    0x0100 /**< Schedule table (11 * sizeof(schedule_payload_t)) */
 #define FRAM_ADDR_WAKEUP_CONTEXT    0x0200 /**< Context of the next wakeup */
 #define FRAM_ADDR_RING_BUFFER_LOGS  0x0300 /**< Offline Telemetry FIFO Queue / Ring Buffer */
-#define FRAM_ADDR_IR_RAW_DATA       0x0600  // Endereço base na FRAM para os slots IR
+#define FRAM_ADDR_IR_RAW_DATA       0x1800 /**< Base FRAM address for slot of IR command raw */
 
 /**
  * @brief Initializes the storage module and the FRAM driver.

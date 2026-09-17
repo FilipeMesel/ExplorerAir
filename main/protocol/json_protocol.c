@@ -253,3 +253,69 @@ esp_err_t json_encode_schedule_ack(const schedule_payload_t *payload, char *pub_
 
     return ESP_OK;
 }
+
+esp_err_t json_decode_set_ir_raw(const char *json_str, uint8_t *out_action_idx, ir_raw_command_t *out_cmd) {
+    if (json_str == NULL || out_action_idx == NULL || out_cmd == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Erro ao realizar parse do JSON no CMD 8");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *action_item = cJSON_GetObjectItemCaseSensitive(root, "action");
+    cJSON *raw_item = cJSON_GetObjectItemCaseSensitive(root, "raw_data");
+
+    if (!cJSON_IsNumber(action_item) || !cJSON_IsArray(raw_item)) {
+        ESP_LOGE(TAG, "Campos 'action_idx' ou 'raw_data' ausentes ou inválidos no CMD 8");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t action_idx = (uint8_t)action_item->valueint;
+    if (action_idx >= IR_SLOT_COUNT) {
+        ESP_LOGE(TAG, "action_idx fora dos limites: %d", action_idx);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int raw_size = cJSON_GetArraySize(raw_item);
+    if (raw_size <= 0 || raw_size > MAX_IR_BUFFER_SIZE) {
+        ESP_LOGE(TAG, "Tamanho de dados IR RAW inválido (%d)", raw_size);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    out_cmd->length = (uint16_t)raw_size;
+    for (int i = 0; i < raw_size; i++) {
+        cJSON *elem = cJSON_GetArrayItem(raw_item, i);
+        if (cJSON_IsNumber(elem)) {
+            out_cmd->data[i] = (uint16_t)elem->valueint;
+        } else {
+            out_cmd->data[i] = 0;
+        }
+    }
+
+    *out_action_idx = action_idx;
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t max_len) {
+    if (pub_buf == NULL || max_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int len = snprintf(pub_buf, max_len,
+        "{\"cmd_id\":%d,\"action_idx\":%d,\"status\":\"SUCCESS\"}",
+        CMD_ID_SET_IR_RAW_DATA_ACK,
+        action_idx);
+
+    if (len < 0 || (size_t)len >= max_len) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}

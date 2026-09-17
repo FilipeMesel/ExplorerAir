@@ -210,9 +210,30 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
         }
 
         case CMD_ID_SET_IR_RAW_DATA: { // CMD 8
-            ESP_LOGI(TAG, "[MQTT RX] Command 8 Received: Set IR Raw Data Payload");
+            ESP_LOGI(TAG, "[MQTT RX] Command %d Received: Set IR Raw Data Payload", CMD_ID_SET_IR_RAW_DATA);
 
-            app_ui_post_message("COMANDO IR", "ATUALIZADO", 100);
+            // Static structure to prevent stack overflow
+            static ir_raw_command_t ir_cmd_buffer;
+            uint8_t action_idx = 0;
+
+            if (json_decode_set_ir_raw(json_str, &action_idx, &ir_cmd_buffer) == ESP_OK) {
+                // Saves the command sequence to FRAM.
+                if (app_storage_save_ir_command(action_idx, &ir_cmd_buffer) == ESP_OK) {
+                    char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};
+
+                    // Encodes and sends the confirmation response (CMD 9)
+                    if (json_encode_set_ir_raw_ack(action_idx, ack_buf, sizeof(ack_buf)) == ESP_OK) {
+                        board_mqtt_publish_uplink(ack_buf, 1); // QoS 1
+                        ESP_LOGI(TAG, "[MQTT TX] CMD 9 (SET IR RAW ACK) enviado: %s", ack_buf);
+                    }
+
+                    app_ui_post_message("COMANDO IR", "SALVO FRAM", 100);
+                } else {
+                    ESP_LOGE(TAG, "Falha ao gravar comando IR na FRAM para slot %d", action_idx);
+                }
+            } else {
+                ESP_LOGE(TAG, "Falha ao decodificar payload do CMD 8");
+            }
             break;
         }
 
