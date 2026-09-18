@@ -1,5 +1,6 @@
-#include "services/app_comms.h"
+#include "app_comms.h"
 #include <string.h>
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "board_wifi.h"
 #include "board_mqtt.h"
@@ -83,16 +84,53 @@ esp_err_t app_comms_send_ir_power_off_cmd(void) {
     return ESP_FAIL;
 }
 
+/**
+ * @brief Lê o comando IR RAW de um slot específico na FRAM e publica no tópico MQTT via CMD 3.
+ */
+static esp_err_t app_comms_send_ir_raw_slot(uint8_t target_slot) {
+    static ir_raw_command_t ir_cmd_buffer;
+    char pub_buf[CONFIG_MQTT_OUT_BUFFER_SIZE] = {0};
+
+    // 1. Lê os dados brutos da FRAM para o slot desejado
+    esp_err_t err = app_storage_get_ir_command(target_slot, &ir_cmd_buffer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler Slot IR %d na FRAM para envio do CMD 3 (err: %s)", 
+                 target_slot, esp_err_to_name(err));
+        return err;
+    }
+
+    // 2. Codifica no formato do CMD 3
+    err = json_encode_cmd3_ir_raw(target_slot, &ir_cmd_buffer, pub_buf, sizeof(pub_buf));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao codificar JSON do CMD 3 para o Slot %d", target_slot);
+        return err;
+    }
+
+    // 3. Publica via MQTT Uplink
+    int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
+    if (msg_id >= 0) {
+        ESP_LOGI(TAG, "[MQTT TX] CMD 3 enviado com sucesso para Slot %d (Length: %d)", 
+                 target_slot, ir_cmd_buffer.length);
+        return ESP_OK;
+    }
+
+    ESP_LOGE(TAG, "Falha ao publicar CMD 3 para Slot %d no broker MQTT", target_slot);
+    return ESP_FAIL;
+}
+
 static last_action_t get_last_action_from_fram(void) {
     wakeup_context_t wakeup_ctx = {0};
-    esp_err_t err = app_storage_get_wakeup_context(&wakeup_ctx);
     
-    if (err == ESP_OK) {
-        return wakeup_ctx.pending_action;
+    if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK) {
+        // Retorna o bitmap persistido na FRAM
+        return (last_action_t)wakeup_ctx.pending_action;
     }
     
-    ESP_LOGW(TAG, "Não foi possível ler wakeup context. Usando LAST_ACTION_NONE.");
-    return LAST_ACTION_NONE;
+    // Fallback: Retorna um bitmap limpo (apenas telemetria regular)
+    last_action_t default_bm = 0;
+    SET_LAST_ACTION_REASON(default_bm, WAKEUP_REASON_TELEMETRY);
+    SET_LAST_ACTION_ACTION(default_bm, IR_ACTION_NONE);
+    return default_bm;
 }
 
 void app_comms_on_wifi_event(void *handler_args, esp_event_base_t base, int32_t id, void *data) {
@@ -214,7 +252,40 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
         }
 
         case CMD_ID_GET_IR_LEARNED: // CMD 2
-            ESP_LOGI(TAG, "[MQTT RX] Command 2 Received: Get IR Learned Queue Request");
+            uint8_t requested_action = 0;
+            if (json_decode_cmd2_get_ir(json_str, &requested_action) == ESP_OK)
+            {
+                ESP_LOGI(TAG, "[MQTT RX] CMD 2 recebido para action: %d", requested_action);
+                wakeup_context_t ctx = {0};
+                app_storage_get_wakeup_context(&ctx);
+                if (requested_action <= 8)
+                {
+                    uint8_t target_slot = requested_action + 1; // Slot 1 a 9
+
+                    // Transmite o payload bruto via CMD 3
+                    app_comms_send_ir_raw_slot(target_slot);
+
+                    // Atualiza o wakeup_context preservando os estados de raw transmit na FRAM
+                    SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 1);
+                    app_storage_save_wakeup_context(&ctx);
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "[MQTT RX] CMD 2 com action %d (> 8). Executando reset do contexto na FRAM...", requested_action);
+
+                    // Reset do bitmap de ações e motivo
+                    ctx.pending_action = 0;
+
+                    if (app_storage_save_wakeup_context(&ctx) == ESP_OK)
+                    {
+                        ESP_LOGI(TAG, "Contexto na FRAM resetado com sucesso.");
+                    }
+                    else
+                    {
+                        ESP_LOGE(TAG, "Falha ao salvar reset do contexto na FRAM.");
+                    }
+                }
+            }
             break;
 
         case CMD_ID_WIFI_PROV: { // CMD 4: Wi-Fi Provisioning

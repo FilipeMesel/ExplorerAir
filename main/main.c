@@ -106,7 +106,7 @@ static void app_fsm_task(void *pvParameters) {
         if (xQueueReceive(g_app_event_queue, &current_evt, portMAX_DELAY) == pdTRUE) {
             switch (current_evt.type) {
 
-                case APP_EVENT_BOOT_ANALYZED:
+                case APP_EVENT_BOOT_ANALYZED: {
                     ESP_LOGI(TAG, "[FSM] Evento de Boot Processado (Causa: %d).", current_evt.boot_cause);
 
                     if (current_evt.boot_cause == EVENT_WAKEUP_BUTTON_DUAL_HOLD)
@@ -116,10 +116,29 @@ static void app_fsm_task(void *pvParameters) {
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "Iniciando Wi-Fi failover...");
+                        wakeup_context_t wakeup_ctx = {0};
+                        if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                        {
+                            last_action_t bm = (last_action_t)wakeup_ctx.pending_action;
+
+                            // Decodifica Bit 0 (Wakeup Reason)
+                            if (GET_LAST_ACTION_REASON(bm) == WAKEUP_REASON_SCHEDULE)
+                            {
+                                // Extrai Bits 1..4 (Slot da Ação)
+                                ir_action_slot_t slot_to_exec = (ir_action_slot_t)GET_LAST_ACTION_ACTION(bm);
+
+                                if (slot_to_exec != IR_ACTION_NONE)
+                                {
+                                    ESP_LOGI(TAG, "[FSM] Boot via Agendamento! Disparando Ação Slot: %d", slot_to_exec);
+                                    app_ir_dispatch_action(slot_to_exec);
+                                }
+                            }
+                        }
+
                         app_comms_wifi_start_failover();
                     }
                     break;
+                }
 
                 case APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY:
                     ESP_LOGI(TAG, "[FSM] Saida do Modo Local solicitada. Iniciando conexao para telemetria...");
@@ -138,7 +157,7 @@ static void app_fsm_task(void *pvParameters) {
 
                     // Dynamic reading of the wakeup context saved in FRAM
                     wakeup_context_t wakeup_ctx = {0};
-                    last_action_t action = LAST_ACTION_NONE;
+                    last_action_t action = IR_ACTION_NONE;
 
                     if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
                     {
@@ -166,39 +185,40 @@ static void app_fsm_task(void *pvParameters) {
                     break;
 
                     case APP_EVENT_MQTT_CONNECTED:
-                        ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando saida do menu...");
-
+                        ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando saída do menu...");
                         app_ui_post_message("WIFI", "CONECTADO", 100);
 
-                        // 1. Envia a telemetria inicial padrão
+                        // 1. Envia a telemetria inicial
                         app_comms_send_initial_telemetry();
 
-                        // 2. Lógica de decisão baseada na causa de saída do menu
+                        // 2. Lógica de decisão baseada na FRAM
                         wakeup_context_t ctx = {0};
                         if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
                         {
+                            uint8_t is_download = GET_LAST_ACTION_DOWNLOAD(ctx.pending_action);
 
-                            if (ctx.pending_action == LAST_ACTION_DOWNLOAD_ACK)
+                            // Extrai os bits 1..4 ou mascara para obter apenas a ação IR (ignorando flags)
+                            // Assumindo que a ação IR é obtida mascarando os bits de flag
+                            ir_action_slot_t action = (ir_action_slot_t)GET_LAST_ACTION_ACTION(ctx.pending_action);
+
+                            if (is_download)
                             {
-                                // SAÍDA VIA MENU DOWNLOAD: Envia o ACK de Download (CMD 9 idx=255)
-                                ESP_LOGI(TAG, "[FSM] Saida via DOWNLOAD. Enviando CMD 9 (idx=255)...");
+                                ESP_LOGI(TAG, "[FSM] Saída via DOWNLOAD. Enviando ACK (CMD 9 idx=255)...");
                                 app_comms_send_ir_download_ack();
                             }
-                            else if (ctx.pending_action == LAST_ACTION_LEARNED_ACK)
+                            else if (action != IR_ACTION_NONE)
                             {
-                                // SAÍDA POR QUALQUER OUTRO MOTIVO: Envia o CMD 3 (IR Raw Desligar)
-                                ESP_LOGI(TAG, "[FSM] Saida convencional do menu. Disparando CMD 3 (IR Raw Desligar)...");
-
-                                // Dispara o envio do CMD 3 (Ação de Desligar / Slot 0)
+                                // Executa o Power Off APENAS se houver uma ação IR válida pendente
+                                ESP_LOGI(TAG, "[FSM] Ação IR pendente encontrada (%d). Enviando CMD 3 (IR Desligar)...", action);
                                 app_comms_send_ir_power_off_cmd();
                             }
-
-                            // Limpa a ação pendente na FRAM para evitar reenvios em conexões futuras
-                            ctx.pending_action = LAST_ACTION_NONE;
-                            app_storage_save_wakeup_context(&ctx);
+                            else
+                            {
+                                // Apenas telemetria ou nenhuma ação pendente
+                                ESP_LOGI(TAG, "[FSM] Sem ação IR pendente na FRAM. Pulando disparo do CMD 3. %d", action);
+                            }
                         }
 
-                        // 3. Inicia o timer de desligamento (30s)
                         if (g_shutdown_timer != NULL)
                         {
                             esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
@@ -222,7 +242,7 @@ static void app_fsm_task(void *pvParameters) {
                     {
                         // Dynamic reading of the wakeup context saved in FRAM
                         wakeup_context_t wakeup_ctx = {0};
-                        last_action_t action = LAST_ACTION_NONE;
+                        last_action_t action = IR_ACTION_NONE;
 
                         if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
                         {

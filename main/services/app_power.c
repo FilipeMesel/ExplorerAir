@@ -108,29 +108,29 @@ static esp_err_t execute_pending_fram_action(void) {
              wakeup_ctx.reason, wakeup_ctx.schedule_id, wakeup_ctx.pending_action);
     
     switch (wakeup_ctx.pending_action) {
-        case LAST_ACTION_NONE:
+        case IR_ACTION_NONE:
             ESP_LOGI(TAG, "Nenhuma acao IR pendente (Apenas Telemetria).");
             break;
-        case LAST_ACTION_LEARNED_ACK:
-            ESP_LOGI(TAG, "Acao: LAST_ACTION_LEARNED_ACK");
+        case IR_ACTION_LEARNED_ACK:
+            ESP_LOGI(TAG, "Acao: IR_ACTION_LEARNED_ACK");
             break;
-        case LAST_ACTION_DOWNLOAD_ACK:
-            ESP_LOGI(TAG, "Acao: LAST_ACTION_DOWNLOAD_ACK");
+        case IR_ACTION_DOWNLOAD_ACK:
+            ESP_LOGI(TAG, "Acao: IR_ACTION_DOWNLOAD_ACK");
             break;
-        case ACTION_POWER_OFF:
-            ESP_LOGI(TAG, "Acao: ACTION_POWER_OFF");
+        case IR_ACTION_POWER_OFF:
+            ESP_LOGI(TAG, "Acao: IR_ACTION_POWER_OFF");
             break;
-        case ACTION_POWER_ON:
-            ESP_LOGI(TAG, "Acao: ACTION_POWER_ON");
+        case IR_ACTION_POWER_ON:
+            ESP_LOGI(TAG, "Acao: IR_ACTION_POWER_ON");
             break;
-        case ACTION_SET_TEMP_18:
-        case ACTION_SET_TEMP_19:
-        case ACTION_SET_TEMP_20:
-        case ACTION_SET_TEMP_21:
-        case ACTION_SET_TEMP_22:
-        case ACTION_SET_TEMP_23:
-        case ACTION_SET_TEMP_24:
-        case ACTION_SET_TEMP_25:
+        case IR_ACTION_SET_TEMP_18:
+        case IR_ACTION_SET_TEMP_19:
+        case IR_ACTION_SET_TEMP_20:
+        case IR_ACTION_SET_TEMP_21:
+        case IR_ACTION_SET_TEMP_22:
+        case IR_ACTION_SET_TEMP_23:
+        case IR_ACTION_SET_TEMP_24:
+        case IR_ACTION_SET_TEMP_25:
             ESP_LOGI(TAG, "Acao de temperatura disparada: %d", wakeup_ctx.pending_action);
             break;
         default:
@@ -290,6 +290,7 @@ esp_err_t app_power_schedule_next_wakeup(void) {
     }
 
     wakeup_context_t wakeup_ctx = {0};
+    app_storage_get_wakeup_context(&wakeup_ctx);
 
     if (found_valid_schedule && (closest_schedule_epoch <= telemetry_target_epoch)) {
         rtc_date_time_t target_dt;
@@ -306,7 +307,8 @@ esp_err_t app_power_schedule_next_wakeup(void) {
 
         wakeup_ctx.reason = WAKEUP_REASON_SCHEDULE;
         wakeup_ctx.schedule_id = closest_schedule.schedule_id;
-        wakeup_ctx.pending_action = closest_schedule.action;
+        SET_LAST_ACTION_REASON(wakeup_ctx.pending_action, WAKEUP_REASON_SCHEDULE);
+        SET_LAST_ACTION_ACTION(wakeup_ctx.pending_action, closest_schedule.action);
 
     } else {
         rtc_ht8563_clear_flags();
@@ -319,7 +321,7 @@ esp_err_t app_power_schedule_next_wakeup(void) {
 
         wakeup_ctx.reason = WAKEUP_REASON_TELEMETRY;
         wakeup_ctx.schedule_id = 0xFF;
-        wakeup_ctx.pending_action = LAST_ACTION_NONE;
+        SET_LAST_ACTION_REASON(wakeup_ctx.pending_action, WAKEUP_REASON_TELEMETRY);
     }
 
     app_storage_save_wakeup_context(&wakeup_ctx);

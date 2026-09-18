@@ -114,6 +114,11 @@ esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t m
  */
 esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cmd, char *pub_buf, size_t max_len);
 
+/**
+ * @brief Decodes CMD 2 JSON payload (GET_IR_LEARNED).
+ */
+esp_err_t json_decode_cmd2_get_ir(const char *json_str, uint8_t *out_requested_action);
+
 #ifdef __cplusplus
 }
 #endif

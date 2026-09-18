@@ -41,16 +41,16 @@ static const oled_cmd_action_t COMMAND_SEQUENCE[] = {
 
 // Mapeamento direto entre o índice da tela (0 a 9) e o enum last_action_t
 static const last_action_t ACTION_MAPPING[] = {
-    ACTION_POWER_OFF,
-    ACTION_POWER_ON,
-    ACTION_SET_TEMP_18,
-    ACTION_SET_TEMP_19,
-    ACTION_SET_TEMP_20,
-    ACTION_SET_TEMP_21,
-    ACTION_SET_TEMP_22,
-    ACTION_SET_TEMP_23,
-    ACTION_SET_TEMP_24,
-    ACTION_SET_TEMP_25
+    IR_ACTION_POWER_OFF,
+    IR_ACTION_POWER_ON,
+    IR_ACTION_SET_TEMP_18,
+    IR_ACTION_SET_TEMP_19,
+    IR_ACTION_SET_TEMP_20,
+    IR_ACTION_SET_TEMP_21,
+    IR_ACTION_SET_TEMP_22,
+    IR_ACTION_SET_TEMP_23,
+    IR_ACTION_SET_TEMP_24,
+    IR_ACTION_SET_TEMP_25
 };
 
 #define TOTAL_COMMANDS (sizeof(COMMAND_SEQUENCE) / sizeof(COMMAND_SEQUENCE[0]))
@@ -64,6 +64,31 @@ static uint8_t s_exit_prompt_option = 0;    // Opção do prompt (0: Continuar, 
 // Estado interno do Aprendizado IR
 static bool s_ir_captured = false;
 static ir_raw_command_t s_captured_cmd;
+
+static void handle_exit_with_bitmap(bool request_download) {
+    last_action_t bm = 0;
+    
+    // Constrói o bitmap: Telemetria regular (0), Ação Nula (0), Download conforme parâmetro
+    SET_LAST_ACTION_REASON(bm, WAKEUP_REASON_TELEMETRY);
+    if(request_download == true)
+        SET_LAST_ACTION_ACTION(bm, IR_ACTION_NONE);
+    else
+        SET_LAST_ACTION_ACTION(bm, IR_ACTION_POWER_OFF);
+    SET_LAST_ACTION_DOWNLOAD(bm, request_download ? 1 : 0);
+    SET_LAST_ACTION_RAW_SEND(bm, 0);
+
+    wakeup_context_t ctx = {
+        .reason = WAKEUP_REASON_TELEMETRY,
+        .pending_action = bm
+    };
+    
+    app_storage_save_wakeup_context(&ctx);
+
+    app_event_t evt = { .type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY };
+    if (g_app_event_queue) {
+        xQueueSend(g_app_event_queue, &evt, 0);
+    }
+}
 
 static void render_main_menu(uint8_t option) {
     switch (option) {
@@ -117,18 +142,9 @@ static void app_buttons_task(void *pvParameters) {
             if (dual_hold_timer_ms >= DUAL_HOLD_EXIT_MS) {
                 ESP_LOGI(TAG, "Dual hold 2s atingido! Efetuando dados de saída...");
 
-                // Garante que a ação pendente não é o ACK de Download
-                wakeup_context_t ctx = {
-                    .reason = WAKEUP_REASON_TELEMETRY,
-                    .pending_action = LAST_ACTION_LEARNED_ACK};
-                app_storage_save_wakeup_context(&ctx);
-
                 app_ui_post_message("SAINDO DO MODO", "ENVIANDO DADOS...", 1500);
 
-                app_event_t evt = { .type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY };
-                if (g_app_event_queue) {
-                    xQueueSend(g_app_event_queue, &evt, 0);
-                }
+                handle_exit_with_bitmap(false);
 
                 while (gpio_get_level(GPIO_BTN_SELECT) == 1 || gpio_get_level(GPIO_BTN_ENTER) == 1) {
                     vTaskDelay(pdMS_TO_TICKS(100));
@@ -176,11 +192,7 @@ static void app_buttons_task(void *pvParameters) {
                         s_ir_captured = false;
 
                         if (s_cmd_index >= TOTAL_COMMANDS - 1) {
-                            wakeup_context_t ctx = {
-                                .reason = WAKEUP_REASON_TELEMETRY,
-                                .pending_action = LAST_ACTION_LEARNED_ACK
-                            };
-                            app_storage_save_wakeup_context(&ctx);
+                            handle_exit_with_bitmap(false);
 
                             s_in_exit_prompt = true;
                             s_exit_prompt_option = 0;
@@ -198,24 +210,22 @@ static void app_buttons_task(void *pvParameters) {
                 }
                 else if (s_current_menu == MENU_STATE_IR_DOWNLOAD)
                 {
-                    ESP_LOGI(TAG, "Botao pressionado na opcao DOWNLOAD. Salvando flag de envio...");
+                    // ESP_LOGI(TAG, "Botao pressionado na opcao DOWNLOAD. Salvando flag de envio...");
 
-                    // Setamos a ação pendente específica que libera a publicação do CMD 9 (idx 255)
-                    wakeup_context_t ctx = {
-                        .reason = WAKEUP_REASON_TELEMETRY,
-                        .pending_action = LAST_ACTION_DOWNLOAD_ACK};
-                    app_storage_save_wakeup_context(&ctx);
+                    // // Setamos a ação pendente específica que libera a publicação do CMD 9 (idx 255)
+                    
 
-                    app_ui_post_message("DOWNLOAD", "COMANDOS IR", 1000);
+                    // app_ui_post_message("DOWNLOAD", "COMANDOS IR", 1000);
+                    // handle_exit_with_bitmap(true);
 
-                    // Dispara a conexão para a FSM
-                    app_event_t evt = {.type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY};
-                    if (g_app_event_queue)
-                    {
-                        xQueueSend(g_app_event_queue, &evt, 0);
-                    }
+                    // // Dispara a conexão para a FSM
+                    // app_event_t evt = {.type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY};
+                    // if (g_app_event_queue)
+                    // {
+                    //     xQueueSend(g_app_event_queue, &evt, 0);
+                    // }
 
-                    vTaskDelete(NULL); // Finaliza a task de botões
+                    // vTaskDelete(NULL); // Finaliza a task de botões
                 }
             }
 
@@ -274,10 +284,17 @@ static void app_buttons_task(void *pvParameters) {
                     }
                     update_ir_screen();
 
-                } else if (s_current_menu == MENU_STATE_IR_DOWNLOAD) {
-                    // Ao apertar Enter na tela de Download, volta ao menu principal
-                    s_current_menu = MENU_STATE_MAIN;
-                    render_main_menu(s_selected_option);
+                }
+                else if (s_current_menu == MENU_STATE_IR_DOWNLOAD)
+                {
+                    ESP_LOGI(TAG, "DOWNLOAD Confirmado via ENTER. Salvando flag e conectando...");
+
+                    app_ui_post_message("DOWNLOAD", "SOLICITADO", 1000);
+
+                    // Configura o bitmap indicando download_request = true e dispara o evento de conexão
+                    handle_exit_with_bitmap(true);
+
+                    vTaskDelete(NULL); // Encerra a task de botões
                 }
             }
         }

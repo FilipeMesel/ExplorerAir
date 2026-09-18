@@ -149,7 +149,7 @@ Device Topics are structured dynamically using the unique Wi-Fi MAC Address:
 ```json
 {"cmd_id":0,"temp":24,"umid":58,"rtc":"14:30:30","day":8,"month":9,"year":2026,"weekday":2,"rssi":-65,"bat":3.70,"last_action":10}
 ```
-`last_action Values:` 
+`last_action is a bitmap that should have the followed Values:` 
 0 = Telemetry,
 1 = OFF, 
 2 = ON, 
@@ -307,6 +307,41 @@ Where:
 - 7 = 23
 - 8 = 24
 - 9 = 25
+
+## System Architecture: `last_action` Bitmask & IR Command Sync Flow
+
+The system represents the `last_action` field in telemetry payloads using an 8-bit bitmask structure. This optimized design enables real-time status decoding for deep-sleep wakeups, scheduling triggers, and active IR data streams.
+
+### Bitmask Field Structure (`uint8_t`)
+
+| Bit Offset | Field Name | Description | Values |
+| :--- | :--- | :--- | :--- |
+| **Bit 0** | Wakeup Reason | Trigger source of the system wakeup. | `0`: Telemetry Timer<br>`1`: Schedule Alarm |
+| **Bits 1..4** | Action Slot ID | Target IR action associated with the schedule trigger. | `0`: NONE<br>`1`: POWER_OFF<br>`2`: POWER_ON<br>`3..10`: Temp 18°C to 25°C |
+| **Bit 5** | Download Pending | Local menu user request to download IR codes. | `0`: Inactive<br>`1`: Download Request Pending |
+| **Bit 6** | RAW IR Stream | Active raw IR transmission state. | `0`: Idle<br>`1`: CMD 3 RAW IR Transmission Active |
+| **Bit 7** | Reserved | Reserved for future firmware expansion. | `0` |
+
+### `CMD_ID_GET_IR_LEARNED` (cmd_id: 2) & Persistence Sequence Flow
+
++----------------+                +-------------------+                +--------------------+
+|  MQTT Broker   |                | ESP32 IR Blaster  |                | FRAM Persistence   |
++-------+--------+                +---------+---------+                +---------+----------+
+        |                                   |                                    |
+        |--- CMD 2 (action: 0..8) --------->|                                    |
+        |                                   |--- Save BIT 6 = 1 (RAW Active) --->|
+        |                                   |--- Reset 30s Shutdown Timer ------>|
+        |<-- CMD 3 (RAW IR Slot Payload) ---|                                    |
+        |                                   |                                    |
+
+1. **Downlink Request Handling (`cmd_id: 2`)**:
+   - The device receives a request containing the targeted `action` index (0 through 8).
+   - `action` index map to internal FRAM slots (Slots 1 to 9).
+2. **Timer & State Preservation**:
+   - Bit 6 of `last_action` is asserted and persisted to FRAM.
+   - The 30-second system power-off timer is continuously reset upon every valid `cmd_id: 2` packet received to guarantee complete sequence transfers without unexpected low-power cutoffs.
+3. **Uplink Response (`cmd_id: 3`)**:
+   - The ESP32 retrieves the pulse sequence stored in FRAM for the targeted slot and returns it through a `cmd_id: 3` JSON response.
 
 ## IR Downloading Workflow (Download Mode)
 
