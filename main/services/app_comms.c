@@ -54,6 +54,35 @@ esp_err_t app_comms_send_ir_download_ack(void) {
     return ESP_FAIL;
 }
 
+esp_err_t app_comms_send_ir_power_off_cmd(void) {
+    // Aloca buffer suficiente para o array raw (recomenda-se no mínimo 2KB/4KB dependendo do número de pulsos)
+    char pub_buf[CONFIG_MQTT_OUT_BUFFER_SIZE] = {0};
+    ir_raw_command_t ir_cmd = {0};
+    uint8_t action_idx = 0; // Slot 0 representa o POWER_OFF
+
+    // 1. Busca os dados brutos do IR na FRAM para o Slot 0
+    esp_err_t err = app_storage_get_ir_command(action_idx, &ir_cmd);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler comando IR do Slot %d da FRAM (err: %s)", action_idx, esp_err_to_name(err));
+        return err;
+    }
+
+    // 2. Codifica o JSON no formato CMD 3 desejado
+    if (json_encode_cmd3_ir_raw(action_idx, &ir_cmd, pub_buf, sizeof(pub_buf)) == ESP_OK) {
+        int msg_id = board_mqtt_publish_uplink(pub_buf, 1); // QoS 1
+        if (msg_id >= 0) {
+            ESP_LOGI(TAG, "[MQTT TX] CMD 3 (IR Raw Desligar) enviado: %s", pub_buf);
+            return ESP_OK;
+        } else {
+            ESP_LOGE(TAG, "Falha ao publicar CMD 3 via MQTT");
+        }
+    } else {
+        ESP_LOGE(TAG, "Erro ao codificar JSON para CMD 3");
+    }
+
+    return ESP_FAIL;
+}
+
 static last_action_t get_last_action_from_fram(void) {
     wakeup_context_t wakeup_ctx = {0};
     esp_err_t err = app_storage_get_wakeup_context(&wakeup_ctx);

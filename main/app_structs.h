@@ -71,7 +71,8 @@ typedef enum {
     ACTION_SET_TEMP_22          = 8,
     ACTION_SET_TEMP_23          = 9,
     ACTION_SET_TEMP_24          = 10,
-    ACTION_SET_TEMP_25          = 11
+    ACTION_SET_TEMP_25          = 11,
+    LAST_ACTION_DOWNLOAD_ACK    = 12
 } last_action_t;
 
 /**

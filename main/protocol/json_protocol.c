@@ -319,3 +319,50 @@ esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t m
 
     return ESP_OK;
 }
+
+esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cmd, char *pub_buf, size_t max_len) {
+    if (cmd == NULL || pub_buf == NULL || max_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Preenche os campos estáticos
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_IR_LEARNED);
+    cJSON_AddNumberToObject(root, "action", action_idx);
+    cJSON_AddNumberToObject(root, "length", cmd->length);
+
+    // Cria o array raw_data com os valores lidos
+    cJSON *raw_array = cJSON_CreateArray();
+    if (raw_array == NULL) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (int i = 0; i < cmd->length; i++) {
+        cJSON_AddItemToArray(raw_array, cJSON_CreateNumber(cmd->data[i]));
+    }
+    cJSON_AddItemToObject(root, "raw_data", raw_array);
+
+    // Renderiza a string JSON
+    char *rendered = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (rendered == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (strlen(rendered) >= max_len) {
+        free(rendered);
+        return ESP_ERR_NO_MEM;
+    }
+
+    strncpy(pub_buf, rendered, max_len - 1);
+    pub_buf[max_len - 1] = '\0';
+    free(rendered);
+
+    return ESP_OK;
+}

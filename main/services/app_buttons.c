@@ -116,6 +116,13 @@ static void app_buttons_task(void *pvParameters) {
 
             if (dual_hold_timer_ms >= DUAL_HOLD_EXIT_MS) {
                 ESP_LOGI(TAG, "Dual hold 2s atingido! Efetuando dados de saída...");
+
+                // Garante que a ação pendente não é o ACK de Download
+                wakeup_context_t ctx = {
+                    .reason = WAKEUP_REASON_TELEMETRY,
+                    .pending_action = LAST_ACTION_LEARNED_ACK};
+                app_storage_save_wakeup_context(&ctx);
+
                 app_ui_post_message("SAINDO DO MODO", "ENVIANDO DADOS...", 1500);
 
                 app_event_t evt = { .type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY };
@@ -196,7 +203,7 @@ static void app_buttons_task(void *pvParameters) {
                     // Setamos a ação pendente específica que libera a publicação do CMD 9 (idx 255)
                     wakeup_context_t ctx = {
                         .reason = WAKEUP_REASON_TELEMETRY,
-                        .pending_action = LAST_ACTION_LEARNED_ACK};
+                        .pending_action = LAST_ACTION_DOWNLOAD_ACK};
                     app_storage_save_wakeup_context(&ctx);
 
                     app_ui_post_message("DOWNLOAD", "COMANDOS IR", 1000);

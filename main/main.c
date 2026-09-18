@@ -165,75 +165,86 @@ static void app_fsm_task(void *pvParameters) {
                 }
                     break;
 
-                case APP_EVENT_MQTT_CONNECTED:
-                    ESP_LOGI(TAG, "[FSM] MQTT Conectado. Enviando telemetria inicial...");
+                    case APP_EVENT_MQTT_CONNECTED:
+                        ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando saida do menu...");
 
-                    app_ui_post_message("WIFI", "CONECTADO", 100);
+                        app_ui_post_message("WIFI", "CONECTADO", 100);
 
-                    app_comms_send_initial_telemetry();
+                        // 1. Envia a telemetria inicial padrão
+                        app_comms_send_initial_telemetry();
 
-                    // 2. Verifica se a ação pendente salva no contexto da FRAM é o Download do IR
-                    wakeup_context_t ctx = {0};
-                    if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
-                    {
-                        if (ctx.pending_action == LAST_ACTION_LEARNED_ACK)
+                        // 2. Lógica de decisão baseada na causa de saída do menu
+                        wakeup_context_t ctx = {0};
+                        if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
                         {
-                            ESP_LOGI(TAG, "[FSM] Solicitação de Download detectada. Enviando CMD 9 (idx=255)...");
 
-                            // Publica o ACK com idx 255
-                            app_comms_send_ir_download_ack();
+                            if (ctx.pending_action == LAST_ACTION_DOWNLOAD_ACK)
+                            {
+                                // SAÍDA VIA MENU DOWNLOAD: Envia o ACK de Download (CMD 9 idx=255)
+                                ESP_LOGI(TAG, "[FSM] Saida via DOWNLOAD. Enviando CMD 9 (idx=255)...");
+                                app_comms_send_ir_download_ack();
+                            }
+                            else if (ctx.pending_action == LAST_ACTION_LEARNED_ACK)
+                            {
+                                // SAÍDA POR QUALQUER OUTRO MOTIVO: Envia o CMD 3 (IR Raw Desligar)
+                                ESP_LOGI(TAG, "[FSM] Saida convencional do menu. Disparando CMD 3 (IR Raw Desligar)...");
 
-                            // Limpa a ação pendente na FRAM para não repetir em futuros reboots/reconexões
+                                // Dispara o envio do CMD 3 (Ação de Desligar / Slot 0)
+                                app_comms_send_ir_power_off_cmd();
+                            }
+
+                            // Limpa a ação pendente na FRAM para evitar reenvios em conexões futuras
                             ctx.pending_action = LAST_ACTION_NONE;
                             app_storage_save_wakeup_context(&ctx);
                         }
-                    }
 
-                    if (g_shutdown_timer != NULL)
+                        // 3. Inicia o timer de desligamento (30s)
+                        if (g_shutdown_timer != NULL)
+                        {
+                            esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
+                            ESP_LOGI(TAG, "[FSM] Timer de shutdown iniciado.");
+                        }
+                        break;
+
+                    case APP_EVENT_MQTT_DATA_RECEIVED:
+                        ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
+                        if (current_evt.mqtt_data.payload != NULL)
+                        {
+
+                            app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
+
+                            free(current_evt.mqtt_data.payload);
+                            current_evt.mqtt_data.payload = NULL;
+                        }
+                        break;
+
+                    case APP_EVENT_MQTT_DISCONNECTED:
                     {
-                        esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT); // 30s em microssegundos
-                        ESP_LOGI(TAG, "[FSM] Timer de shutdown de %llu us iniciado com sucesso.", MQTT_CONNECTED_TIMEOUT);
+                        // Dynamic reading of the wakeup context saved in FRAM
+                        wakeup_context_t wakeup_ctx = {0};
+                        last_action_t action = LAST_ACTION_NONE;
+
+                        if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                        {
+                            action = wakeup_ctx.pending_action;
+                        }
+
+                        // Captures the current reading to save to memory.
+                        telemetry_data_t offline_telemetry = {
+                            .temp = 24,
+                            .umid = 58,
+                            .rssi = 0, // No Wi-Fi
+                            .battery_mv = 3700,
+                            .last_action = action};
+                        rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
+
+                        // Save to the FRAM FIFO queue.
+                        app_storage_push_telemetry_log(&offline_telemetry);
+
+                        app_ui_post_clear();
+                        ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
+                        app_power_shutdown();
                     }
-                    break;
-
-                case APP_EVENT_MQTT_DATA_RECEIVED:
-                    ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
-                    if (current_evt.mqtt_data.payload != NULL) {
-
-                        app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
-
-                        free(current_evt.mqtt_data.payload);
-                        current_evt.mqtt_data.payload = NULL;
-                    }
-                    break;
-                
-                case APP_EVENT_MQTT_DISCONNECTED:
-                {
-                    // Dynamic reading of the wakeup context saved in FRAM
-                    wakeup_context_t wakeup_ctx = {0};
-                    last_action_t action = LAST_ACTION_NONE;
-
-                    if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
-                    {
-                        action = wakeup_ctx.pending_action;
-                    }
-
-                    // Captures the current reading to save to memory.
-                    telemetry_data_t offline_telemetry = {
-                        .temp = 24,
-                        .umid = 58,
-                        .rssi = 0, // No Wi-Fi
-                        .battery_mv = 3700,
-                        .last_action = action};
-                    rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
-
-                    // Save to the FRAM FIFO queue.
-                    app_storage_push_telemetry_log(&offline_telemetry);
-
-                    app_ui_post_clear();
-                    ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
-                    app_power_shutdown();
-                }
                     break;
 
                 case APP_EVENT_TIMER_SET_SUCCESS:

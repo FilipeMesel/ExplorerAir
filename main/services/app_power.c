@@ -114,6 +114,9 @@ static esp_err_t execute_pending_fram_action(void) {
         case LAST_ACTION_LEARNED_ACK:
             ESP_LOGI(TAG, "Acao: LAST_ACTION_LEARNED_ACK");
             break;
+        case LAST_ACTION_DOWNLOAD_ACK:
+            ESP_LOGI(TAG, "Acao: LAST_ACTION_DOWNLOAD_ACK");
+            break;
         case ACTION_POWER_OFF:
             ESP_LOGI(TAG, "Acao: ACTION_POWER_OFF");
             break;
