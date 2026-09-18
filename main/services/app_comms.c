@@ -34,6 +34,26 @@ esp_err_t app_comms_get_wifi_credentials_from_fram(void) {
     return board_wifi_set_dynamic_credential(&fallback_cred);
 }
 
+esp_err_t app_comms_send_ir_download_ack(void) {
+    char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};
+    uint8_t download_idx = IR_EVT_DOWNLOAD_IR_RAW;
+
+    // Codifica a confirmação (CMD 9) utilizando o idx IR_EVT_DOWNLOAD_IR_RAW
+    if (json_encode_set_ir_raw_ack(download_idx, ack_buf, sizeof(ack_buf)) == ESP_OK) {
+        int msg_id = board_mqtt_publish_uplink(ack_buf, 1); // Publica via QoS 1
+        if (msg_id >= 0) {
+            ESP_LOGI(TAG, "[MQTT TX] CMD 9 (DOWNLOAD ACK idx=%d) enviado: %s", download_idx, ack_buf);
+            return ESP_OK;
+        } else {
+            ESP_LOGE(TAG, "Falha ao publicar o CMD 9 para idx=%d no broker", download_idx);
+        }
+    } else {
+        ESP_LOGE(TAG, "Erro ao codificar o JSON ACK para idx=%d", download_idx);
+    }
+
+    return ESP_FAIL;
+}
+
 static last_action_t get_last_action_from_fram(void) {
     wakeup_context_t wakeup_ctx = {0};
     esp_err_t err = app_storage_get_wakeup_context(&wakeup_ctx);

@@ -172,6 +172,23 @@ static void app_fsm_task(void *pvParameters) {
 
                     app_comms_send_initial_telemetry();
 
+                    // 2. Verifica se a ação pendente salva no contexto da FRAM é o Download do IR
+                    wakeup_context_t ctx = {0};
+                    if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
+                    {
+                        if (ctx.pending_action == LAST_ACTION_LEARNED_ACK)
+                        {
+                            ESP_LOGI(TAG, "[FSM] Solicitação de Download detectada. Enviando CMD 9 (idx=255)...");
+
+                            // Publica o ACK com idx 255
+                            app_comms_send_ir_download_ack();
+
+                            // Limpa a ação pendente na FRAM para não repetir em futuros reboots/reconexões
+                            ctx.pending_action = LAST_ACTION_NONE;
+                            app_storage_save_wakeup_context(&ctx);
+                        }
+                    }
+
                     if (g_shutdown_timer != NULL)
                     {
                         esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT); // 30s em microssegundos

@@ -20,6 +20,7 @@
 
 #define IR_SLOT_COUNT               10      // Ações 0 a 9 (DESLIGAR, LIGAR, 18°C ... 25°C)
 #define IR_SLOT_SIZE_BYTES          3072    // 3 KB alocados por slot na FRAM
+#define IR_EVT_DOWNLOAD_IR_RAW      255     /**< Event to Download IR Raw */
 
 /**
  * @brief Enum para indexação legível dos slots IR

@@ -21,7 +21,8 @@ static const char *TAG = "APP_BUTTONS";
 typedef enum {
     MENU_STATE_MAIN,
     MENU_STATE_IR_LEARN,
-    MENU_STATE_IR_TEST
+    MENU_STATE_IR_TEST,
+    MENU_STATE_IR_DOWNLOAD
 } menu_state_t;
 
 // Sequência exata de comandos/telas IR
@@ -64,6 +65,22 @@ static uint8_t s_exit_prompt_option = 0;    // Opção do prompt (0: Continuar, 
 static bool s_ir_captured = false;
 static ir_raw_command_t s_captured_cmd;
 
+static void render_main_menu(uint8_t option) {
+    switch (option) {
+        case 0:
+            app_ui_post_message("> APRENDER", "  TESTAR", 0);
+            break;
+        case 1:
+            app_ui_post_message("  APRENDER", "> TESTAR", 0);
+            break;
+        case 2:
+            app_ui_post_message("  TESTAR", "> DOWNLOAD", 0);
+            break;
+        default:
+            break;
+    }
+}
+
 static void update_ir_screen(void) {
     oled_screen_t screen = (s_current_menu == MENU_STATE_IR_LEARN) 
                           ? OLED_SCREEN_IR_LEARN 
@@ -82,39 +99,23 @@ static void update_ir_screen(void) {
 
 static void app_buttons_task(void *pvParameters) {
     uint32_t dual_hold_timer_ms = 0;
-    // uint32_t inactivity_timer_ms = 0;
     bool last_select = false;
     bool last_enter = false;
 
-    app_ui_post_main_menu(s_selected_option);
+    // Renderiza o menu inicial na opção 0 (> APRENDER)
+    render_main_menu(s_selected_option);
 
     while (1) {
         // Leitura lógica ativa ALTA (1 = Pressionado)
         bool select_pressed = (gpio_get_level(GPIO_BTN_SELECT) == 1);
         bool enter_pressed  = (gpio_get_level(GPIO_BTN_ENTER) == 1);
 
-        // --- REINICIA TIMER DE INATIVIDADE AO PRESSIONAR BOTÕES ---
-        // if (select_pressed || enter_pressed) {
-        //     inactivity_timer_ms = 0;
-        // } else {
-        //     inactivity_timer_ms += POLL_INTERVAL_MS;
-        //     // 3.2.2 Timer de inatividade (25 min) para auto-shutdown da bateria
-        //     if (inactivity_timer_ms >= INACTIVITY_TIMEOUT_MS) {
-        //         ESP_LOGW(TAG, "Inatividade atingida (25 min). Desligando dispositivo...");
-        //         app_event_t evt = { .type = APP_EVENT_SHUTDOWN_REQUESTED };
-        //         if (g_app_event_queue) {
-        //             xQueueSend(g_app_event_queue, &evt, 0);
-        //         }
-        //         vTaskDelete(NULL);
-        //     }
-        // }
-
-        // --- REGRA 5-SEGUNDOS DUAL HOLD (SAÍDA FORÇADA) ---
+        // --- REGRA DUAL HOLD (SAÍDA FORÇADA) ---
         if (select_pressed && enter_pressed) {
             dual_hold_timer_ms += POLL_INTERVAL_MS;
 
             if (dual_hold_timer_ms >= DUAL_HOLD_EXIT_MS) {
-                ESP_LOGI(TAG, "Dual hold 5s atingido! Efetuando dados de saída...");
+                ESP_LOGI(TAG, "Dual hold 2s atingido! Efetuando dados de saída...");
                 app_ui_post_message("SAINDO DO MODO", "ENVIANDO DADOS...", 1500);
 
                 app_event_t evt = { .type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY };
@@ -131,7 +132,7 @@ static void app_buttons_task(void *pvParameters) {
             dual_hold_timer_ms = 0; 
 
             // =================================================================
-            // 3.1.1 POLLING NÃO-BLOQUEANTE IR (MODO APRENDER)
+            // POLLING NÃO-BLOQUEANTE IR (MODO APRENDER)
             // =================================================================
             if (s_current_menu == MENU_STATE_IR_LEARN && !s_in_exit_prompt && !s_ir_captured) {
                 ir_raw_command_t temp_cmd;
@@ -142,35 +143,32 @@ static void app_buttons_task(void *pvParameters) {
                         ESP_LOGI(TAG, "Comando IR capturado no Slot %d (%d pulsos). Aguardando confirmacao.", 
                                  s_cmd_index, s_captured_cmd.length);
                         
-                        // Notifica o usuário no display para Gravar (BT1) ou Descartar (BT2)
                         app_ui_post_message(" SINAL CAPTURADO", "BT1:GRAVAR BT2:DESC", 0);
                     }
                 }
             }
 
             // =================================================================
-            // MUTAÇÃO / TRATAMENTO DO BOTÃO SELECT (GPIO 5)
+            // TRATAMENTO DO BOTÃO SELECT (GPIO 5) - NAVEGAÇÃO
             // =================================================================
             if (select_pressed && !last_select) {
                 if (s_current_menu == MENU_STATE_MAIN) {
-                    s_selected_option = (s_selected_option == 0) ? 1 : 0;
-                    app_ui_post_main_menu(s_selected_option);
+                    // Cicla entre 0 (Aprender), 1 (Testar) e 2 (Download)
+                    s_selected_option = (s_selected_option + 1) % 3;
+                    render_main_menu(s_selected_option);
 
                 } else if (s_in_exit_prompt) {
                     s_exit_prompt_option = (s_exit_prompt_option == 0) ? 1 : 0;
                     update_ir_screen();
 
                 } else if (s_current_menu == MENU_STATE_IR_LEARN) {
-                    // 3.1.2 GPIO 5 (SELECT) para GRAVAR comando capturado
                     if (s_ir_captured) {
                         app_storage_save_ir_command(s_cmd_index, &s_captured_cmd);
                         ESP_LOGI(TAG, "Comando IR do Slot %d salvo na FRAM!", s_cmd_index);
                         
                         s_ir_captured = false;
 
-                        // 3.1.3 Lógica de finalização do aprendizado (Ação 9 / 25°C)
                         if (s_cmd_index >= TOTAL_COMMANDS - 1) {
-                            // Salva no contexto de wakeup/telemetria: last_action = 1 (Learned ACK)
                             wakeup_context_t ctx = {
                                 .reason = WAKEUP_REASON_TELEMETRY,
                                 .pending_action = LAST_ACTION_LEARNED_ACK
@@ -187,28 +185,62 @@ static void app_buttons_task(void *pvParameters) {
                     }
 
                 } else if (s_current_menu == MENU_STATE_IR_TEST) {
-                    // 3.2.1 Navegação de ações (GPIO 5)
                     s_cmd_index = (s_cmd_index + 1) % TOTAL_COMMANDS;
                     update_ir_screen();
+
+                }
+                else if (s_current_menu == MENU_STATE_IR_DOWNLOAD)
+                {
+                    ESP_LOGI(TAG, "Botao pressionado na opcao DOWNLOAD. Salvando flag de envio...");
+
+                    // Setamos a ação pendente específica que libera a publicação do CMD 9 (idx 255)
+                    wakeup_context_t ctx = {
+                        .reason = WAKEUP_REASON_TELEMETRY,
+                        .pending_action = LAST_ACTION_LEARNED_ACK};
+                    app_storage_save_wakeup_context(&ctx);
+
+                    app_ui_post_message("DOWNLOAD", "COMANDOS IR", 1000);
+
+                    // Dispara a conexão para a FSM
+                    app_event_t evt = {.type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY};
+                    if (g_app_event_queue)
+                    {
+                        xQueueSend(g_app_event_queue, &evt, 0);
+                    }
+
+                    vTaskDelete(NULL); // Finaliza a task de botões
                 }
             }
 
             // =================================================================
-            // MUTAÇÃO / TRATAMENTO DO BOTÃO ENTER (GPIO 38)
+            // TRATAMENTO DO BOTÃO ENTER (GPIO 38) - CONFIRMAÇÃO / AÇÃO
             // =================================================================
             if (enter_pressed && !last_enter) {
                 if (s_current_menu == MENU_STATE_MAIN) {
-                    s_current_menu = (s_selected_option == 0) ? MENU_STATE_IR_LEARN : MENU_STATE_IR_TEST;
-                    s_cmd_index = 0;
-                    s_in_exit_prompt = false;
-                    s_ir_captured = false;
-                    update_ir_screen();
+                    if (s_selected_option == 0) {
+                        s_current_menu = MENU_STATE_IR_LEARN;
+                        s_cmd_index = 0;
+                        s_in_exit_prompt = false;
+                        s_ir_captured = false;
+                        update_ir_screen();
+                    } else if (s_selected_option == 1) {
+                        s_current_menu = MENU_STATE_IR_TEST;
+                        s_cmd_index = 0;
+                        s_in_exit_prompt = false;
+                        s_ir_captured = false;
+                        update_ir_screen();
+                    } else if (s_selected_option == 2) {
+                        // ENTROU NO MODO DOWNLOAD
+                        s_current_menu = MENU_STATE_IR_DOWNLOAD;
+                        ESP_LOGI(TAG, "Opcao DOWNLOAD selecionada no menu.");
+                        app_ui_post_message("   DOWNLOAD   ", "  DOWNLOAD IR AC  ", 0);
+                    }
 
                 } else if (s_in_exit_prompt) {
                     if (s_exit_prompt_option == 1) { // Selecionou "SAIR"
                         s_current_menu = MENU_STATE_MAIN;
                         s_in_exit_prompt = false;
-                        app_ui_post_main_menu(s_selected_option);
+                        render_main_menu(s_selected_option);
                     } else { // Selecionou "CONTINUAR"
                         s_cmd_index = 0;
                         s_in_exit_prompt = false;
@@ -217,7 +249,6 @@ static void app_buttons_task(void *pvParameters) {
                     }
 
                 } else if (s_current_menu == MENU_STATE_IR_LEARN) {
-                    // 3.1.2 GPIO 38 (ENTER) para DESCARTAR e re-aguardar
                     if (s_ir_captured) {
                         ESP_LOGI(TAG, "Sinal IR descartado pelo usuario. Aguardando novo sinal...");
                         s_ir_captured = false;
@@ -225,17 +256,21 @@ static void app_buttons_task(void *pvParameters) {
                     }
 
                 } else if (s_current_menu == MENU_STATE_IR_TEST) {
-                    // 3.2.1 Disparo manual de teste via RMT (GPIO 38)
                     last_action_t current_action = ACTION_MAPPING[s_cmd_index];
                     ESP_LOGI(TAG, "Modo Teste: Disparando acao %d (Slot %d)...", current_action, s_cmd_index);
                     
                     esp_err_t ret = app_ir_dispatch_action(current_action);
                     if (ret == ESP_OK) {
-                        app_ui_post_message("  COMANDO IR  ", " ENVIADO SUCC! ", 1000);
+                        app_ui_post_message("  COMANDO IR  ", " ENVIANDO SUCC! ", 1000);
                     } else {
                         app_ui_post_message("  FALHA ENVIO ", " SLOT VAZIO/ERR", 1000);
                     }
                     update_ir_screen();
+
+                } else if (s_current_menu == MENU_STATE_IR_DOWNLOAD) {
+                    // Ao apertar Enter na tela de Download, volta ao menu principal
+                    s_current_menu = MENU_STATE_MAIN;
+                    render_main_menu(s_selected_option);
                 }
             }
         }

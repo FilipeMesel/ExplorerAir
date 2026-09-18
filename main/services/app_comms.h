@@ -49,6 +49,12 @@ void app_comms_on_mqtt_event(void *handler_args, esp_event_base_t base, int32_t 
 
 esp_err_t app_comms_get_wifi_credentials_from_fram(void);
 
+/**
+ * @brief Publica a mensagem de confirmação (CMD 9) especificamente para o índice de Download (idx = 255).
+ * @return ESP_OK em caso de sucesso.
+ */
+esp_err_t app_comms_send_ir_download_ack(void);
+
 #ifdef __cplusplus
 }
 #endif

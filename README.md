@@ -308,6 +308,31 @@ Where:
 - 8 = 24
 - 9 = 25
 
+## IR Downloading Workflow (Download Mode)
+
+When the **DOWNLOAD** option is selected in the local menu (`MENU_STATE_IR_DOWNLOAD`), the ESP32 exits the learning mode and triggers the automated IR data synchronization sequence with the cloud platform.
+
+### Workflow Sequence
+
+1. **Triggering Download Mode:**
+   - The user selects the **DOWNLOAD** option via the device menu.
+   - The ESP32 connects to Wi-Fi/MQTT and publishes an initial ACK command indicating readiness for IR downloading:
+
+   **Device Response (CMD 9):**
+   ```json
+   {
+     "cmd_id": 9,
+     "action_idx": 255,
+     "status": "SUCCESS"
+   }
+   ```
+  
+2. Platform Sync Loop:
+  - Upon receiving cmd_id: 9 with action_idx: 255, the cloud platform must initiate the sequential download process.
+  - The platform sends CMD 8 (CMD_ID_SET_IR_RAW_DATA) starting with the first command slot (e.g., IR Power Off at index 0).
+  - For every CMD 8 received, the ESP32 stores the IR raw payload into FRAM and replies with its respective confirmation ACK (CMD 9 with the matching action_idx).
+  - The platform waits for each CMD 9 acknowledgment before sending the next IR command slot until all required IR commands are downloaded.
+
 
 ## 🚀 Building & Flashing
 
