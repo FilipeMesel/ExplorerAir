@@ -184,39 +184,33 @@ static void app_fsm_task(void *pvParameters) {
                 }
                     break;
 
-                    case APP_EVENT_MQTT_CONNECTED:
-                        ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando saída do menu...");
-                        app_ui_post_message("WIFI", "CONECTADO", 100);
+                case APP_EVENT_MQTT_CONNECTED:
+                {
+                    ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando estado do dispositivo...");
+                    app_ui_post_message("WIFI", "CONECTADO", 100);
 
-                        // 1. Envia a telemetria inicial
-                        app_comms_send_initial_telemetry();
+                    // Envia a telemetria inicial (CMD 0)
+                    app_comms_send_initial_telemetry();
 
-                        // 2. Lógica de decisão baseada na FRAM
-                        wakeup_context_t ctx = {0};
-                        if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
+                    wakeup_context_t ctx = {0};
+                    if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
+                    {
+                        uint8_t is_download = GET_LAST_ACTION_DOWNLOAD(ctx.pending_action);
+                        ir_action_slot_t action = (ir_action_slot_t)GET_LAST_ACTION_ACTION(ctx.pending_action);
+
+                        if (is_download)
                         {
-                            uint8_t is_download = GET_LAST_ACTION_DOWNLOAD(ctx.pending_action);
+                            ESP_LOGI(TAG, "[FSM] Solicitando início da sequência de Download (CMD 9 idx=255)...");
+                            app_comms_send_ir_download_ack();
 
-                            // Extrai os bits 1..4 ou mascara para obter apenas a ação IR (ignorando flags)
-                            // Assumindo que a ação IR é obtida mascarando os bits de flag
-                            ir_action_slot_t action = (ir_action_slot_t)GET_LAST_ACTION_ACTION(ctx.pending_action);
-
-                            if (is_download)
-                            {
-                                ESP_LOGI(TAG, "[FSM] Saída via DOWNLOAD. Enviando ACK (CMD 9 idx=255)...");
-                                app_comms_send_ir_download_ack();
-                            }
-                            else if (action != IR_ACTION_NONE)
-                            {
-                                // Executa o Power Off APENAS se houver uma ação IR válida pendente
-                                ESP_LOGI(TAG, "[FSM] Ação IR pendente encontrada (%d). Enviando CMD 3 (IR Desligar)...", action);
-                                app_comms_send_ir_power_off_cmd();
-                            }
-                            else
-                            {
-                                // Apenas telemetria ou nenhuma ação pendente
-                                ESP_LOGI(TAG, "[FSM] Sem ação IR pendente na FRAM. Pulando disparo do CMD 3. %d", action);
-                            }
+                            // // IMPORTANTE: Limpa a flag localmente para evitar reenvio contínuo em reconexões sem CMD 8
+                            // SET_LAST_ACTION_DOWNLOAD(ctx.pending_action, 0);
+                            // app_storage_save_wakeup_context(&ctx);
+                        }
+                        else if (action == IR_ACTION_POWER_OFF)
+                        {
+                            ESP_LOGI(TAG, "[FSM] Disparando CMD 3 (IR Power Off)...");
+                            app_comms_send_ir_power_off_cmd();
                         }
 
                         if (g_shutdown_timer != NULL)
@@ -224,7 +218,9 @@ static void app_fsm_task(void *pvParameters) {
                             esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
                             ESP_LOGI(TAG, "[FSM] Timer de shutdown iniciado.");
                         }
-                        break;
+                    }
+                    break;
+                }
 
                     case APP_EVENT_MQTT_DATA_RECEIVED:
                         ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);

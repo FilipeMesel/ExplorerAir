@@ -306,7 +306,7 @@ esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t m
     }
 
     int len = snprintf(pub_buf, max_len,
-        "{\"cmd_id\":%d,\"action_idx\":%d,\"status\":\"SUCCESS\"}",
+        "{\"cmd_id\":%d,\"action\":%d,\"status\":\"SUCCESS\"}",
         CMD_ID_SET_IR_RAW_DATA_ACK,
         action_idx);
 

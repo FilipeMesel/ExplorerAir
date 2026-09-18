@@ -65,24 +65,48 @@ static uint8_t s_exit_prompt_option = 0;    // Opção do prompt (0: Continuar, 
 static bool s_ir_captured = false;
 static ir_raw_command_t s_captured_cmd;
 
-static void handle_exit_with_bitmap(bool request_download) {
-    last_action_t bm = 0;
-    
-    // Constrói o bitmap: Telemetria regular (0), Ação Nula (0), Download conforme parâmetro
-    SET_LAST_ACTION_REASON(bm, WAKEUP_REASON_TELEMETRY);
-    if(request_download == true)
-        SET_LAST_ACTION_ACTION(bm, IR_ACTION_NONE);
-    else
-        SET_LAST_ACTION_ACTION(bm, IR_ACTION_POWER_OFF);
-    SET_LAST_ACTION_DOWNLOAD(bm, request_download ? 1 : 0);
-    SET_LAST_ACTION_RAW_SEND(bm, 0);
+static void handle_exit_with_bitmap(bool request_download)
+{
+    wakeup_context_t ctx = {0};
 
-    wakeup_context_t ctx = {
-        .reason = WAKEUP_REASON_TELEMETRY,
-        .pending_action = bm
-    };
-    
-    app_storage_save_wakeup_context(&ctx);
+    // 1. Lê o contexto atual gravado na FRAM
+    if (app_storage_get_wakeup_context(&ctx) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "[UI] Falha ao ler wakeup context da FRAM");
+        return;
+    }
+
+    last_action_t bm = ctx.pending_action;
+
+    if (request_download)
+    {
+        // Força a solicitação de download via MQTT (CMD 9 / action 255)
+        SET_LAST_ACTION_DOWNLOAD(bm, 1);
+        SET_LAST_ACTION_ACTION(bm, IR_ACTION_NONE);
+        SET_LAST_ACTION_RAW_SEND(bm, 0);
+        
+        ESP_LOGI(TAG, "[UI] Configurando bitmap para solicitar Download Remoto");
+    }
+    else
+    {
+        // Limpa o bit de download e prepara o envio IR local (ex: Power Off / Slot 1)
+        SET_LAST_ACTION_DOWNLOAD(bm, 0);
+        SET_LAST_ACTION_ACTION(bm, IR_ACTION_POWER_OFF);
+        SET_LAST_ACTION_RAW_SEND(bm, 1);
+
+        ESP_LOGI(TAG, "[UI] Configurando bitmap para execução local de IR (Power Off)");
+    }
+
+    // 2. Grava o contexto atualizado de volta na FRAM
+    ctx.pending_action = bm;
+    if (app_storage_save_wakeup_context(&ctx) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "[UI] Exit via bitmap executado. Contexto: 0x%02X", bm);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "[UI] Erro ao salvar wakeup context na FRAM ao sair");
+    }
 
     app_event_t evt = { .type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY };
     if (g_app_event_queue) {
