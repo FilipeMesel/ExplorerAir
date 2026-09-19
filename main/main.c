@@ -149,8 +149,46 @@ static void app_fsm_task(void *pvParameters) {
 
                                 if (slot_to_exec != IR_ACTION_NONE)
                                 {
-                                    ESP_LOGI(TAG, "[FSM] Boot via Agendamento! Disparando Ação Slot: %d", slot_to_exec);
-                                    app_ir_dispatch_action(slot_to_exec);
+                                    ESP_LOGI(TAG, "[FSM] Boot via Agendamento! Processando Ação Slot: %d", slot_to_exec);
+
+                                    if (slot_to_exec == IR_ACTION_POWER_OFF)
+                                    {
+                                        // Dispara Power Off 3 vezes
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_OFF);
+                                            vTaskDelay(pdMS_TO_TICKS(100)); // Pequeno intervalo entre disparos
+                                        }
+                                    }
+                                    else if (slot_to_exec == IR_ACTION_POWER_ON)
+                                    {
+                                        // Dispara Power On 3 vezes
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_ON);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+                                    }
+                                    else if (slot_to_exec >= IR_ACTION_SET_TEMP_18 && slot_to_exec <= IR_ACTION_SET_TEMP_25)
+                                    {
+                                        // Dispara Power On 3 vezes
+                                        ESP_LOGI(TAG, "[FSM] Enviando Power On (3x) antes da temperatura...");
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_ON);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+
+                                        vTaskDelay(pdMS_TO_TICKS(200)); // Pausa entre Power On e Temperatura
+
+                                        // Dispara a Temperatura solicitada 3 vezes
+                                        ESP_LOGI(TAG, "[FSM] Enviando Temperatura Slot %d (3x)...", slot_to_exec);
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(slot_to_exec);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+                                    }
                                 }
                             }
                         }
