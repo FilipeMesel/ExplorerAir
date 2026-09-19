@@ -1,5 +1,6 @@
 #include "app_comms.h"
 #include <string.h>
+#include "freertos/event_groups.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "board_wifi.h"
@@ -10,7 +11,143 @@
 #include "rtc_ht8563.h"
 #include "app_events.h"
 
+#define CMD2_ACK_BIT              BIT0
+#define MAX_IR_TX_RETRIES         3
+#define CMD2_TIMEOUT_MS           2000
+
+extern void app_main_refresh_shutdown_timer(void);
+extern void app_main_stop_shutdown_timer(void);
+
+static EventGroupHandle_t s_cmd2_event_group = NULL;
+static uint8_t s_current_expected_action = 0;
+
 static const char *TAG = "APP_COMMS";
+
+/**
+ * @brief Inicializa a infraestrutura de sincronização de comunicação
+ */
+esp_err_t app_comms_init_sync_objects(void) {
+    if (s_cmd2_event_group == NULL) {
+        s_cmd2_event_group = xEventGroupCreate();
+        if (s_cmd2_event_group == NULL) {
+            ESP_LOGE(TAG, "Falha ao criar EventGroup do CMD2");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief Transmite o slot IR via CMD 3 e aguarda o retorno do CMD 2 com retry (Até 3x por slot)
+ */
+esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
+    if (s_cmd2_event_group == NULL) {
+        app_comms_init_sync_objects();
+    }
+
+    // 1. Aloca os buffers grandes no HEAP em vez da STACK
+    ir_raw_command_t *ir_cmd_buffer = malloc(sizeof(ir_raw_command_t));
+    char *pub_buf = malloc(CONFIG_MQTT_OUT_BUFFER_SIZE);
+
+    if (ir_cmd_buffer == NULL || pub_buf == NULL) {
+        ESP_LOGE(TAG, "Falha de alocação de memória para envio IR");
+        free(ir_cmd_buffer);
+        free(pub_buf);
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_current_expected_action = target_slot;
+
+    // 2. Lê os dados RAW do Slot da FRAM
+    esp_err_t err = app_storage_get_ir_command(target_slot, ir_cmd_buffer);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler Slot IR %d na FRAM (err: %s)", target_slot, esp_err_to_name(err));
+        free(ir_cmd_buffer);
+        free(pub_buf);
+        return err;
+    }
+
+    // 3. Codifica em JSON (CMD 3)
+    err = json_encode_cmd3_ir_raw(target_slot, ir_cmd_buffer, pub_buf, CONFIG_MQTT_OUT_BUFFER_SIZE);
+    
+    // Libera a memória do comando IR após gerar o JSON
+    free(ir_cmd_buffer);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro ao codificar JSON do CMD 3 para o Slot %d", target_slot);
+        free(pub_buf);
+        return err;
+    }
+
+    // Loop de tentativas por Slot (Até 3 vezes)
+    for (int attempt = 1; attempt <= MAX_IR_TX_RETRIES; attempt++) {
+        ESP_LOGI(TAG, "[MQTT TX] Envio CMD 3 para Slot/Action %d - Tentativa %d/%d", 
+                 target_slot, attempt, MAX_IR_TX_RETRIES);
+
+        xEventGroupClearBits(s_cmd2_event_group, CMD2_ACK_BIT);
+
+        int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
+        if (msg_id >= 0) {
+            EventBits_t bits = xEventGroupWaitBits(
+                s_cmd2_event_group,
+                CMD2_ACK_BIT,
+                pdTRUE,
+                pdFALSE,
+                pdMS_TO_TICKS(CMD2_TIMEOUT_MS)
+            );
+
+            if ((bits & CMD2_ACK_BIT) != 0) {
+                ESP_LOGI(TAG, "[MQTT RX] CMD 2 (ACK) recebido com sucesso para Action %d!", target_slot);
+                app_main_refresh_shutdown_timer();
+                free(pub_buf); // Libera o buffer MQTT antes de retornar
+                return ESP_OK;
+            } else {
+                ESP_LOGW(TAG, "[TIMEOUT] CMD 2 para Action %d não recebido em %d ms (Tentativa %d/%d)", 
+                         target_slot, CMD2_TIMEOUT_MS, attempt, MAX_IR_TX_RETRIES);
+            }
+        } else {
+            ESP_LOGE(TAG, "Falha ao publicar CMD 3 via MQTT (Tentativa %d/%d)", attempt, MAX_IR_TX_RETRIES);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    // Libera o buffer no final do erro
+    free(pub_buf);
+    ESP_LOGE(TAG, "Esgotadas as 3 tentativas para a Action %d!", target_slot);
+    return ESP_FAIL;
+}
+
+/**
+ * @brief Executa a sequência de envios de Action 0 (Power Off) até Action 9 (25°C)
+ */
+esp_err_t app_comms_run_ir_sequence(void) {
+    ESP_LOGI(TAG, "[IR SEQ] Iniciando sequência de comandos IR (Action 0 a 9)...");
+
+    // Loop pelas 10 Ações:
+    // 0: Power Off | 1: Power On | 2: 18°C | 3: 19°C | 4: 20°C | 5: 21°C | 6: 22°C | 7: 23°C | 8: 24°C | 9: 25°C
+    for (uint8_t action = 0; action <= 9; action++) {
+        esp_err_t ret = app_comms_send_ir_raw_slot_with_retry(action);
+        
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "[IR SEQ] Falha na transmissão da Action %d após 3 tentativas. Abortando sequência!", action);
+            
+            // Dispara o evento de falha para a FSM exibir a mensagem no OLED e desligar
+            app_event_t fail_evt = {
+                .type = APP_EVENT_IR_TRANSFER_FAILED
+            };
+            if (g_app_event_queue) {
+                xQueueSend(g_app_event_queue, &fail_evt, 0);
+            }
+            return ESP_FAIL;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Pequena pausa antes de disparar o próximo comando
+    }
+
+    ESP_LOGI(TAG, "[IR SEQ] Toda a sequência de comandos IR foi executada e confirmada com sucesso!");
+    return ESP_OK;
+}
 
 esp_err_t app_comms_get_wifi_credentials_from_fram(void) {
     wifi_credentials_t fram_creds = {0};
@@ -252,38 +389,33 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
         }
 
         case CMD_ID_GET_IR_LEARNED: // CMD 2
-            uint8_t requested_action = 0;
-            if (json_decode_cmd2_get_ir(json_str, &requested_action) == ESP_OK)
             {
-                ESP_LOGI(TAG, "[MQTT RX] CMD 2 recebido para action: %d", requested_action);
-                wakeup_context_t ctx = {0};
-                app_storage_get_wakeup_context(&ctx);
-                if (requested_action <= 8)
+                uint8_t requested_action = 0;
+                if (json_decode_cmd2_get_ir(json_str, &requested_action) == ESP_OK)
                 {
-                    uint8_t target_slot = requested_action + 1; // Slot 1 a 9
+                    ESP_LOGI(TAG, "[MQTT RX] CMD 2 recebido para action: %d", requested_action);
 
-                    // Transmite o payload bruto via CMD 3
-                    app_comms_send_ir_raw_slot(target_slot);
-
-                    // Atualiza o wakeup_context preservando os estados de raw transmit na FRAM
-                    SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 1);
-                    app_storage_save_wakeup_context(&ctx);
-                }
-                else
-                {
-                    ESP_LOGW(TAG, "[MQTT RX] CMD 2 com action %d (> 8). Executando reset do contexto na FRAM...", requested_action);
-
-                    // Reset do bitmap de ações e motivo
-                    ctx.pending_action = 0;
-                    SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 0);
-
-                    if (app_storage_save_wakeup_context(&ctx) == ESP_OK)
+                    // Valida se corresponde à ação que está aguardando no handshake
+                    if (requested_action == s_current_expected_action && s_cmd2_event_group != NULL)
                     {
-                        ESP_LOGI(TAG, "Contexto na FRAM resetado com sucesso.");
+                        xEventGroupSetBits(s_cmd2_event_group, CMD2_ACK_BIT);
+                    }
+
+                    wakeup_context_t ctx = {0};
+                    app_storage_get_wakeup_context(&ctx);
+
+                    // Aceita actions até 9 (Power Off até 25 °C)
+                    if (requested_action < 9)
+                    {
+                        SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 1);
+                        app_storage_save_wakeup_context(&ctx);
                     }
                     else
                     {
-                        ESP_LOGE(TAG, "Falha ao salvar reset do contexto na FRAM.");
+                        ESP_LOGW(TAG, "[MQTT RX] CMD 2 com action %d (> 9). Resetando contexto...", requested_action);
+                        ctx.pending_action = 0;
+                        SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 0);
+                        app_storage_save_wakeup_context(&ctx);
                     }
                 }
             }

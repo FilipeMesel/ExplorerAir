@@ -61,6 +61,13 @@ esp_err_t app_comms_send_ir_download_ack(void);
  */
 esp_err_t app_comms_send_ir_power_off_cmd(void);
 
+/**
+ * @brief Executa a sequência sequencial de envio IR (Action 0 a 9) com controle
+ *        de retentativas (3x por ação) e aguardo do CMD 2 (ACK da plataforma).
+ * @return ESP_OK se toda a sequência foi concluída com sucesso; ESP_FAIL se algum slot falhar 3x.
+ */
+esp_err_t app_comms_run_ir_sequence(void);
+
 #ifdef __cplusplus
 }
 #endif

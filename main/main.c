@@ -31,6 +31,21 @@ QueueHandle_t g_app_event_queue = NULL;
 
 static esp_timer_handle_t g_shutdown_timer = NULL;
 
+void app_main_refresh_shutdown_timer(void) {
+    if (g_shutdown_timer != NULL) {
+        esp_timer_stop(g_shutdown_timer);
+        esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
+        ESP_LOGI(TAG, "[TIMER] Timer de shutdown reiniciado (30s).");
+    }
+}
+
+void app_main_stop_shutdown_timer(void) {
+    if (g_shutdown_timer != NULL) {
+        esp_timer_stop(g_shutdown_timer);
+        ESP_LOGI(TAG, "[TIMER] Timer de shutdown pausado.");
+    }
+}
+
 static void shutdown_timer_callback(void* arg) {
     ESP_LOGI(TAG, "[TIMER 30s] Tempo limite atingido! Solicitando shutdown...");
     app_event_t evt = {
@@ -85,6 +100,11 @@ static esp_err_t board_hardware_init(void) {
     if (ret != ESP_OK) return ret;
 
     return ESP_OK;
+}
+
+static void ir_sequence_task(void *pvParameters) {
+    app_comms_run_ir_sequence();
+    vTaskDelete(NULL);
 }
 
 static void app_fsm_task(void *pvParameters) {
@@ -203,14 +223,11 @@ static void app_fsm_task(void *pvParameters) {
                             ESP_LOGI(TAG, "[FSM] Solicitando início da sequência de Download (CMD 9 idx=255)...");
                             app_comms_send_ir_download_ack();
 
-                            // // IMPORTANTE: Limpa a flag localmente para evitar reenvio contínuo em reconexões sem CMD 8
-                            // SET_LAST_ACTION_DOWNLOAD(ctx.pending_action, 0);
-                            // app_storage_save_wakeup_context(&ctx);
                         }
                         else if (action == IR_ACTION_POWER_OFF)
                         {
                             ESP_LOGI(TAG, "[FSM] Disparando CMD 3 (IR Power Off)...");
-                            app_comms_send_ir_power_off_cmd();
+                            xTaskCreate(ir_sequence_task, "ir_seq_task", 8192, NULL, 5, NULL);
                         }
 
                         if (g_shutdown_timer != NULL)
@@ -261,6 +278,17 @@ static void app_fsm_task(void *pvParameters) {
                         ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                         app_power_shutdown();
                     }
+                    break;
+
+                case APP_EVENT_IR_TRANSFER_FAILED:
+                    ESP_LOGE(TAG, "[FSM] Falha crítica na transmissão IR (CMD 3 / CMD 2). Exibindo mensagem e desligando...");
+
+                    // Exibe no OLED a mensagem solicitada
+                    app_ui_post_message("ERRO ENVIO IR", "DESLIGANDO...", 0);
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+
+                    app_ui_post_clear();
+                    app_power_shutdown();
                     break;
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
