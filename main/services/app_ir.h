@@ -9,26 +9,26 @@ extern "C" {
 #endif
 
 /**
- * @brief Inicializa os periféricos RMT de TX/RX para o receptor e transmissor IR.
+ * @brief Initializes the TX/RX RMT peripherals for the IR receiver and transmitter.
  * 
- * @return esp_err_t ESP_OK em caso de sucesso.
+ * @return esp_err_t ESP_OK in the event of success.
  */
 esp_err_t app_ir_init(void);
 
 /**
- * @brief Converte um 'last_action_t' para o slot de memória IR (0 a 9).
+ * @brief Converts a 'last_action_t' to the IR memory slot (0 to 9).
  * 
- * @param action Enum da ação (ex: ACTION_POWER_OFF, ACTION_SET_TEMP_22).
- * @param out_slot Ponteiro para receber o índice do slot (0 a 9).
- * @return esp_err_t ESP_OK se mapeado com sucesso, ESP_ERR_INVALID_ARG se a ação não for de IR.
+ * @param action Action enum (e.g., ACTION_POWER_OFF, ACTION_SET_TEMP_22).
+ * @param out_slot Pointer to receive the slot index (0 to 9).
+ * @return esp_err_t ESP_OK if successfully mapped, ESP_ERR_INVALID_ARG if the action is not an IR action.
  */
 esp_err_t app_ir_action_to_slot(ir_action_slot_t action, uint8_t *out_slot);
 
 /**
- * @brief Carrega o sinal IR da FRAM e transmite via hardware RMT.
+ * @brief Loads the IR signal from FRAM and transmits it via the RMT hardware.
  * 
- * @param action Ação IR que será buscada na FRAM e emitida.
- * @return esp_err_t ESP_OK em caso de sucesso na leitura e emissão.
+ * @param action IR action to be sought from FRAM and issued.
+ * @return esp_err_t ESP_OK in the event of successful reading and issuance.
  */
 esp_err_t app_ir_dispatch_action(ir_action_slot_t action);
 
