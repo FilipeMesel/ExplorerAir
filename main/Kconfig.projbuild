@@ -45,13 +45,13 @@ menu "Explorer IRBlaster Test Configuration"
 
     config MQTT_BUFFER_SIZE
         int "MQTT Rx Buffer Size (bytes)"
-        default 2048
+        default 8192
         help
             Tamanho em bytes do buffer de entrada (Rx) do cliente MQTT para recepção de payloads JSON grandes.
 
     config MQTT_OUT_BUFFER_SIZE
         int "MQTT Tx Buffer Size (bytes)"
-        default 2048
+        default 8192
         help
             Tamanho em bytes do buffer de saída (Tx) do cliente MQTT para envio de mensagens.
 

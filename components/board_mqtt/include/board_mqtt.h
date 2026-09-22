@@ -31,7 +31,7 @@ typedef enum {
  */
 typedef struct {
     char topic[128];
-    char payload[2048];
+    char *payload;
     size_t payload_len;
 } board_mqtt_data_t;
 

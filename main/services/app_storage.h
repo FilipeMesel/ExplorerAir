@@ -12,6 +12,7 @@
 #define FRAM_ADDR_SCHEDULE_TABLE    0x0100 /**< Schedule table (11 * sizeof(schedule_payload_t)) */
 #define FRAM_ADDR_WAKEUP_CONTEXT    0x0200 /**< Context of the next wakeup */
 #define FRAM_ADDR_RING_BUFFER_LOGS  0x0300 /**< Offline Telemetry FIFO Queue / Ring Buffer */
+#define FRAM_ADDR_IR_RAW_DATA       0x1800 /**< Base FRAM address for slot of IR command raw */
 
 /**
  * @brief Initializes the storage module and the FRAM driver.
@@ -96,5 +97,23 @@ esp_err_t app_storage_get_telemetry_log_count(uint16_t *out_count);
  * @brief Resets the FIFO queue in FRAM.
  */
 esp_err_t app_storage_clear_telemetry_queue(void);
+
+/**
+ * @brief Salva um comando IR RAW na FRAM para um determinado índice de ação (0 a 9).
+ * 
+ * @param action_idx Índice do slot/ação (0 a 9).
+ * @param cmd Ponteiro para o comando IR a ser armazenado.
+ * @return esp_err_t ESP_OK em caso de sucesso, ESP_ERR_INVALID_ARG se parâmetro incorreto, ou erro de I2C.
+ */
+esp_err_t app_storage_save_ir_command(uint8_t action_idx, const ir_raw_command_t *cmd);
+
+/**
+ * @brief Recupera um comando IR RAW da FRAM a partir de um índice de ação (0 a 9).
+ * 
+ * @param action_idx Índice do slot/ação (0 a 9).
+ * @param out_cmd Ponteiro para a estrutura onde o comando lido será copiado.
+ * @return esp_err_t ESP_OK em caso de sucesso, ESP_ERR_INVALID_ARG se parâmetro incorreto, ou erro de I2C/Checksum.
+ */
+esp_err_t app_storage_get_ir_command(uint8_t action_idx, ir_raw_command_t *out_cmd);
 
 #endif // APP_STORAGE_H

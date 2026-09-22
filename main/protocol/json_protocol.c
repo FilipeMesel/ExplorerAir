@@ -16,12 +16,9 @@ esp_err_t json_encode_telemetry(const telemetry_data_t *data, char *out_buf, siz
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (data->last_action < LAST_ACTION_NONE || data->last_action > ACTION_SET_TEMP_25) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     float bat_v = data->battery_mv / 1000.0f;
 
+    // Modificado para passar (int)data->last_action no final
     int len = snprintf(out_buf, max_len,
         "{\"cmd_id\":0,\"temp\":%d,\"umid\":%d,\"rtc\":\"%02d:%02d:%02d\",\"day\":%d,\"month\":%d,\"year\":%d,\"weekday\":%d,\"rssi\":%d,\"bat\":%.2f,\"last_action\":%d}",
         data->temp, 
@@ -163,34 +160,34 @@ esp_err_t json_encode_wifi_ack(const wifi_prov_payload_t *payload, char *pub_buf
     return ESP_OK;
 }
 
-static last_action_t action_str_to_enum(const char *str) {
-    if (!str) return LAST_ACTION_NONE;
-    if (strcmp(str, "POWER_OFF") == 0) return ACTION_POWER_OFF;
-    if (strcmp(str, "POWER_ON") == 0) return ACTION_POWER_ON;
-    if (strcmp(str, "SET_TEMP_18") == 0) return ACTION_SET_TEMP_18;
-    if (strcmp(str, "SET_TEMP_19") == 0) return ACTION_SET_TEMP_19;
-    if (strcmp(str, "SET_TEMP_20") == 0) return ACTION_SET_TEMP_20;
-    if (strcmp(str, "SET_TEMP_21") == 0) return ACTION_SET_TEMP_21;
-    if (strcmp(str, "SET_TEMP_22") == 0) return ACTION_SET_TEMP_22;
-    if (strcmp(str, "SET_TEMP_23") == 0) return ACTION_SET_TEMP_23;
-    if (strcmp(str, "SET_TEMP_24") == 0) return ACTION_SET_TEMP_24;
-    if (strcmp(str, "SET_TEMP_25") == 0) return ACTION_SET_TEMP_25;
-    return LAST_ACTION_NONE;
+static ir_action_slot_t action_str_to_enum(const char *str) {
+    if (!str) return IR_ACTION_NONE;
+    if (strcmp(str, "POWER_OFF") == 0)   return IR_ACTION_POWER_OFF;
+    if (strcmp(str, "POWER_ON") == 0)    return IR_ACTION_POWER_ON;
+    if (strcmp(str, "SET_TEMP_18") == 0) return IR_ACTION_SET_TEMP_18;
+    if (strcmp(str, "SET_TEMP_19") == 0) return IR_ACTION_SET_TEMP_19;
+    if (strcmp(str, "SET_TEMP_20") == 0) return IR_ACTION_SET_TEMP_20;
+    if (strcmp(str, "SET_TEMP_21") == 0) return IR_ACTION_SET_TEMP_21;
+    if (strcmp(str, "SET_TEMP_22") == 0) return IR_ACTION_SET_TEMP_22;
+    if (strcmp(str, "SET_TEMP_23") == 0) return IR_ACTION_SET_TEMP_23;
+    if (strcmp(str, "SET_TEMP_24") == 0) return IR_ACTION_SET_TEMP_24;
+    if (strcmp(str, "SET_TEMP_25") == 0) return IR_ACTION_SET_TEMP_25;
+    return IR_ACTION_NONE;
 }
 
-static const char* action_enum_to_str(last_action_t action) {
+static const char* action_enum_to_str(ir_action_slot_t action) {
     switch (action) {
-        case ACTION_POWER_OFF:   return "POWER_OFF";
-        case ACTION_POWER_ON:    return "POWER_ON";
-        case ACTION_SET_TEMP_18: return "SET_TEMP_18";
-        case ACTION_SET_TEMP_19: return "SET_TEMP_19";
-        case ACTION_SET_TEMP_20: return "SET_TEMP_20";
-        case ACTION_SET_TEMP_21: return "SET_TEMP_21";
-        case ACTION_SET_TEMP_22: return "SET_TEMP_22";
-        case ACTION_SET_TEMP_23: return "SET_TEMP_23";
-        case ACTION_SET_TEMP_24: return "SET_TEMP_24";
-        case ACTION_SET_TEMP_25: return "SET_TEMP_25";
-        default:                 return "NONE";
+        case IR_ACTION_POWER_OFF:   return "POWER_OFF";
+        case IR_ACTION_POWER_ON:    return "POWER_ON";
+        case IR_ACTION_SET_TEMP_18: return "SET_TEMP_18";
+        case IR_ACTION_SET_TEMP_19: return "SET_TEMP_19";
+        case IR_ACTION_SET_TEMP_20: return "SET_TEMP_20";
+        case IR_ACTION_SET_TEMP_21: return "SET_TEMP_21";
+        case IR_ACTION_SET_TEMP_22: return "SET_TEMP_22";
+        case IR_ACTION_SET_TEMP_23: return "SET_TEMP_23";
+        case IR_ACTION_SET_TEMP_24: return "SET_TEMP_24";
+        case IR_ACTION_SET_TEMP_25: return "SET_TEMP_25";
+        default:                    return "NONE";
     }
 }
 
@@ -251,5 +248,139 @@ esp_err_t json_encode_schedule_ack(const schedule_payload_t *payload, char *pub_
         return ESP_ERR_NO_MEM;
     }
 
+    return ESP_OK;
+}
+
+esp_err_t json_decode_set_ir_raw(const char *json_str, uint8_t *out_action_idx, ir_raw_command_t *out_cmd) {
+    if (json_str == NULL || out_action_idx == NULL || out_cmd == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Erro ao realizar parse do JSON no CMD 8");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *action_item = cJSON_GetObjectItemCaseSensitive(root, "action");
+    cJSON *raw_item = cJSON_GetObjectItemCaseSensitive(root, "raw_data");
+
+    if (!cJSON_IsNumber(action_item) || !cJSON_IsArray(raw_item)) {
+        ESP_LOGE(TAG, "Campos 'action_idx' ou 'raw_data' ausentes ou inválidos no CMD 8");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t action_idx = (uint8_t)action_item->valueint;
+    if (action_idx >= IR_SLOT_COUNT) {
+        ESP_LOGE(TAG, "action_idx fora dos limites: %d", action_idx);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int raw_size = cJSON_GetArraySize(raw_item);
+    if (raw_size <= 0 || raw_size > MAX_IR_BUFFER_SIZE) {
+        ESP_LOGE(TAG, "Tamanho de dados IR RAW inválido (%d)", raw_size);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    out_cmd->length = (uint16_t)raw_size;
+    for (int i = 0; i < raw_size; i++) {
+        cJSON *elem = cJSON_GetArrayItem(raw_item, i);
+        if (cJSON_IsNumber(elem)) {
+            out_cmd->data[i] = (uint16_t)elem->valueint;
+        } else {
+            out_cmd->data[i] = 0;
+        }
+    }
+
+    *out_action_idx = action_idx;
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t max_len) {
+    if (pub_buf == NULL || max_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int len = snprintf(pub_buf, max_len,
+        "{\"cmd_id\":%d,\"action\":%d,\"status\":\"SUCCESS\"}",
+        CMD_ID_SET_IR_RAW_DATA_ACK,
+        action_idx);
+
+    if (len < 0 || (size_t)len >= max_len) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cmd, char *pub_buf, size_t max_len) {
+    if (cmd == NULL || pub_buf == NULL || max_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Preenche os campos estáticos
+    cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_IR_LEARNED);
+    cJSON_AddNumberToObject(root, "action", action_idx);
+    cJSON_AddNumberToObject(root, "length", cmd->length);
+
+    // Cria o array raw_data com os valores lidos
+    cJSON *raw_array = cJSON_CreateArray();
+    if (raw_array == NULL) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (int i = 0; i < cmd->length; i++) {
+        cJSON_AddItemToArray(raw_array, cJSON_CreateNumber(cmd->data[i]));
+    }
+    cJSON_AddItemToObject(root, "raw_data", raw_array);
+
+    // Renderiza a string JSON
+    char *rendered = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (rendered == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (strlen(rendered) >= max_len) {
+        free(rendered);
+        return ESP_ERR_NO_MEM;
+    }
+
+    strncpy(pub_buf, rendered, max_len - 1);
+    pub_buf[max_len - 1] = '\0';
+    free(rendered);
+
+    return ESP_OK;
+}
+
+esp_err_t json_decode_cmd2_get_ir(const char *json_str, uint8_t *out_requested_action) {
+    if (json_str == NULL || out_requested_action == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_Parse(json_str);
+    if (root == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *action_item = cJSON_GetObjectItemCaseSensitive(root, "action");
+    if (!cJSON_IsNumber(action_item)) {
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *out_requested_action = (uint8_t)action_item->valueint;
+    cJSON_Delete(root);
     return ESP_OK;
 }

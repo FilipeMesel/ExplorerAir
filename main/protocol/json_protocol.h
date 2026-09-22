@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 #define MAX_SCHEDULES 11        /**< 0 - 10 Schedules */
-#define MAX_IR_RAW_TIMINGS 750  /**< Maximum number of IR raw timings for CMD 7 */
+#define MAX_IR_RAW_TIMINGS 700  /**< Maximum number of IR raw timings for CMD 7 */
 
 /**
  * @brief Enumeration of Command IDs
@@ -82,6 +82,42 @@ esp_err_t json_decode_schedule(const char *json_str, schedule_payload_t *out_pay
  * @return esp_err_t ESP_OK in the event of success.
  */
 esp_err_t json_encode_schedule_ack(const schedule_payload_t *payload, char *pub_buf, size_t max_len);
+
+/**
+ * @brief Decodes the CMD 8 JSON payload (SET_IR_RAW_DATA).
+ *
+ * @param json_str Payload
+ * @param out_action_idx action index
+ * @param out_cmd ir struct object
+ * @return esp_err_t ESP_OK in the event of success.
+ */
+esp_err_t json_decode_set_ir_raw(const char *json_str, uint8_t *out_action_idx, ir_raw_command_t *out_cmd);
+
+/**
+ * @brief Encodes the ACK response for CMD 9 (SET_IR_RAW_DATA_ACK) in JSON.
+ *
+ * @param action_idx action index
+ * @param pub_buf payload
+ * @param max_len payload size
+ * @return esp_err_t ESP_OK in the event of success.
+ */
+esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t max_len);
+
+/**
+ * @brief Codifica o comando CMD 3 (IR Learned/Raw) contendo a ação, tamanho e os dados raw.
+ * 
+ * @param action_idx Índice da ação/slot (0 a 9).
+ * @param cmd Ponteiro para a estrutura com os dados do comando IR lido da FRAM.
+ * @param pub_buf Buffer de saída para o JSON.
+ * @param max_len Tamanho máximo do buffer de saída.
+ * @return esp_err_t ESP_OK em caso de sucesso.
+ */
+esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cmd, char *pub_buf, size_t max_len);
+
+/**
+ * @brief Decodes CMD 2 JSON payload (GET_IR_LEARNED).
+ */
+esp_err_t json_decode_cmd2_get_ir(const char *json_str, uint8_t *out_requested_action);
 
 #ifdef __cplusplus
 }

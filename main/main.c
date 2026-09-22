@@ -18,6 +18,7 @@
 #include "services/app_power.h"
 #include "services/app_ui.h"
 #include "services/app_buttons.h"
+#include "services/app_ir.h"
 
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
@@ -29,6 +30,21 @@ static const char *TAG = "MAIN_APP";
 QueueHandle_t g_app_event_queue = NULL;
 
 static esp_timer_handle_t g_shutdown_timer = NULL;
+
+void app_main_refresh_shutdown_timer(void) {
+    if (g_shutdown_timer != NULL) {
+        esp_timer_stop(g_shutdown_timer);
+        esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
+        ESP_LOGI(TAG, "[TIMER] Timer de shutdown reiniciado (30s).");
+    }
+}
+
+void app_main_stop_shutdown_timer(void) {
+    if (g_shutdown_timer != NULL) {
+        esp_timer_stop(g_shutdown_timer);
+        ESP_LOGI(TAG, "[TIMER] Timer de shutdown pausado.");
+    }
+}
 
 static void shutdown_timer_callback(void* arg) {
     ESP_LOGI(TAG, "[TIMER 30s] Tempo limite atingido! Solicitando shutdown...");
@@ -71,6 +87,9 @@ static esp_err_t board_hardware_init(void) {
     ret = app_storage_init();
     if (ret != ESP_OK) return ret;
 
+    ret = app_ir_init();
+    if (ret != ESP_OK) return ret;
+
     ret = oled_init(OLED_I2C_ADDR_DEFAULT);
     if (ret != ESP_OK) return ret;
 
@@ -81,6 +100,11 @@ static esp_err_t board_hardware_init(void) {
     if (ret != ESP_OK) return ret;
 
     return ESP_OK;
+}
+
+static void ir_sequence_task(void *pvParameters) {
+    app_comms_run_ir_sequence();
+    vTaskDelete(NULL);
 }
 
 static void app_fsm_task(void *pvParameters) {
@@ -102,7 +126,7 @@ static void app_fsm_task(void *pvParameters) {
         if (xQueueReceive(g_app_event_queue, &current_evt, portMAX_DELAY) == pdTRUE) {
             switch (current_evt.type) {
 
-                case APP_EVENT_BOOT_ANALYZED:
+                case APP_EVENT_BOOT_ANALYZED: {
                     ESP_LOGI(TAG, "[FSM] Evento de Boot Processado (Causa: %d).", current_evt.boot_cause);
 
                     if (current_evt.boot_cause == EVENT_WAKEUP_BUTTON_DUAL_HOLD)
@@ -112,10 +136,67 @@ static void app_fsm_task(void *pvParameters) {
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "Iniciando Wi-Fi failover...");
+                        wakeup_context_t wakeup_ctx = {0};
+                        if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                        {
+                            last_action_t bm = (last_action_t)wakeup_ctx.pending_action;
+
+                            // Decodifica Bit 0 (Wakeup Reason)
+                            if (GET_LAST_ACTION_REASON(bm) == WAKEUP_REASON_SCHEDULE)
+                            {
+                                // Extrai Bits 1..4 (Slot da Ação)
+                                ir_action_slot_t slot_to_exec = (ir_action_slot_t)GET_LAST_ACTION_ACTION(bm);
+
+                                if (slot_to_exec != IR_ACTION_NONE)
+                                {
+                                    ESP_LOGI(TAG, "[FSM] Boot via Agendamento! Processando Ação Slot: %d", slot_to_exec);
+
+                                    if (slot_to_exec == IR_ACTION_POWER_OFF)
+                                    {
+                                        // Dispara Power Off 3 vezes
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_OFF);
+                                            vTaskDelay(pdMS_TO_TICKS(100)); // Pequeno intervalo entre disparos
+                                        }
+                                    }
+                                    else if (slot_to_exec == IR_ACTION_POWER_ON)
+                                    {
+                                        // Dispara Power On 3 vezes
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_ON);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+                                    }
+                                    else if (slot_to_exec >= IR_ACTION_SET_TEMP_18 && slot_to_exec <= IR_ACTION_SET_TEMP_25)
+                                    {
+                                        // Dispara Power On 3 vezes
+                                        ESP_LOGI(TAG, "[FSM] Enviando Power On (3x) antes da temperatura...");
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(IR_ACTION_POWER_ON);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+
+                                        vTaskDelay(pdMS_TO_TICKS(200)); // Pausa entre Power On e Temperatura
+
+                                        // Dispara a Temperatura solicitada 3 vezes
+                                        ESP_LOGI(TAG, "[FSM] Enviando Temperatura Slot %d (3x)...", slot_to_exec);
+                                        for (int i = 0; i < 3; i++)
+                                        {
+                                            app_ir_dispatch_action(slot_to_exec);
+                                            vTaskDelay(pdMS_TO_TICKS(100));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         app_comms_wifi_start_failover();
                     }
                     break;
+                }
 
                 case APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY:
                     ESP_LOGI(TAG, "[FSM] Saida do Modo Local solicitada. Iniciando conexao para telemetria...");
@@ -134,7 +215,7 @@ static void app_fsm_task(void *pvParameters) {
 
                     // Dynamic reading of the wakeup context saved in FRAM
                     wakeup_context_t wakeup_ctx = {0};
-                    last_action_t action = LAST_ACTION_NONE;
+                    last_action_t action = IR_ACTION_NONE;
 
                     if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
                     {
@@ -158,64 +239,99 @@ static void app_fsm_task(void *pvParameters) {
                     vTaskDelay(pdMS_TO_TICKS(3000));
                     app_ui_post_clear();
                     app_power_shutdown();
-
-                    app_power_shutdown();
                 }
                     break;
 
                 case APP_EVENT_MQTT_CONNECTED:
-                    ESP_LOGI(TAG, "[FSM] MQTT Conectado. Enviando telemetria inicial...");
-
+                {
+                    ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando estado do dispositivo...");
                     app_ui_post_message("WIFI", "CONECTADO", 100);
 
+                    // Envia a telemetria inicial (CMD 0)
                     app_comms_send_initial_telemetry();
 
-                    if (g_shutdown_timer != NULL)
+                    wakeup_context_t ctx = {0};
+                    if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
                     {
-                        esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT); // 30s em microssegundos
-                        ESP_LOGI(TAG, "[FSM] Timer de shutdown de %llu us iniciado com sucesso.", MQTT_CONNECTED_TIMEOUT);
+                        uint8_t is_download = GET_LAST_ACTION_DOWNLOAD(ctx.pending_action);
+                        ir_action_slot_t action = (ir_action_slot_t)GET_LAST_ACTION_ACTION(ctx.pending_action);
+
+                        if (is_download)
+                        {
+                            ESP_LOGI(TAG, "[FSM] Solicitando início da sequência de Download (CMD 9 idx=255)...");
+                            app_comms_send_ir_download_ack();
+
+                        }
+                        else if (action == IR_ACTION_POWER_OFF)
+                        {
+                            ESP_LOGI(TAG, "[FSM] Disparando CMD 3 (IR Power Off)...");
+                            xTaskCreate(ir_sequence_task, "ir_seq_task", 8192, NULL, 5, NULL);
+                        }
+
+                        if (g_shutdown_timer != NULL)
+                        {
+                            esp_timer_start_once(g_shutdown_timer, MQTT_CONNECTED_TIMEOUT);
+                            ESP_LOGI(TAG, "[FSM] Timer de shutdown iniciado.");
+                        }
+                    }
+                    break;
+                }
+
+                    case APP_EVENT_MQTT_DATA_RECEIVED:
+                        ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
+                        if (current_evt.mqtt_data.payload != NULL)
+                        {
+
+                            app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
+
+                            free(current_evt.mqtt_data.payload);
+                            current_evt.mqtt_data.payload = NULL;
+                        }
+                        break;
+
+                    case APP_EVENT_MQTT_DISCONNECTED:
+                    {
+                        // Dynamic reading of the wakeup context saved in FRAM
+                        wakeup_context_t wakeup_ctx = {0};
+                        last_action_t action = IR_ACTION_NONE;
+
+                        if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
+                        {
+                            action = wakeup_ctx.pending_action;
+                        }
+
+                        // Captures the current reading to save to memory.
+                        telemetry_data_t offline_telemetry = {
+                            .temp = 24,
+                            .umid = 58,
+                            .rssi = 0, // No Wi-Fi
+                            .battery_mv = 3700,
+                            .last_action = action};
+                        rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
+
+                        // Save to the FRAM FIFO queue.
+                        app_storage_push_telemetry_log(&offline_telemetry);
+
+                        app_ui_post_clear();
+                        ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
+                        app_power_shutdown();
                     }
                     break;
 
-                case APP_EVENT_MQTT_DATA_RECEIVED:
-                    ESP_LOGI(TAG, "[FSM] Dados MQTT recebidos no tópico: %s", current_evt.mqtt_data.topic);
-                    app_comms_process_mqtt_command(current_evt.mqtt_data.payload);
-                    break;
-                
-                case APP_EVENT_MQTT_DISCONNECTED:
-                {
-                    // Dynamic reading of the wakeup context saved in FRAM
-                    wakeup_context_t wakeup_ctx = {0};
-                    last_action_t action = LAST_ACTION_NONE;
+                case APP_EVENT_IR_TRANSFER_FAILED:
+                    ESP_LOGE(TAG, "[FSM] Falha crítica na transmissão IR (CMD 3 / CMD 2). Exibindo mensagem e desligando...");
 
-                    if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK)
-                    {
-                        action = wakeup_ctx.pending_action;
-                    }
-
-                    // Captures the current reading to save to memory.
-                    telemetry_data_t offline_telemetry = {
-                        .temp = 24,
-                        .umid = 58,
-                        .rssi = 0, // No Wi-Fi
-                        .battery_mv = 3700,
-                        .last_action = action};
-                    rtc_ht8563_get_time(&offline_telemetry.sync_time_t);
-
-                    // Save to the FRAM FIFO queue.
-                    app_storage_push_telemetry_log(&offline_telemetry);
+                    // Exibe no OLED a mensagem solicitada
+                    app_ui_post_message("ERRO ENVIO IR", "DESLIGANDO...", 0);
+                    vTaskDelay(pdMS_TO_TICKS(3000));
 
                     app_ui_post_clear();
                     app_power_shutdown();
-                    ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
-                    app_power_shutdown();
-                }
                     break;
 
                 case APP_EVENT_TIMER_SET_SUCCESS:
                 case APP_EVENT_SHUTDOWN_REQUESTED:
                     app_ui_post_clear();
-                    app_power_shutdown();
                     ESP_LOGI(TAG, "[FSM] Solicitação de shutdown. Executando rotina de desligamento...");
                     app_power_shutdown();
                     break;
@@ -245,5 +361,5 @@ void app_main(void) {
 
     init_shutdown_timer();
 
-    xTaskCreate(app_fsm_task, "app_fsm_task", 8192, NULL, 5, NULL);
+    xTaskCreate(app_fsm_task, "app_fsm_task", 12288, NULL, 5, NULL);
 }
