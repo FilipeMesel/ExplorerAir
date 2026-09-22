@@ -99,20 +99,20 @@ esp_err_t app_storage_get_telemetry_log_count(uint16_t *out_count);
 esp_err_t app_storage_clear_telemetry_queue(void);
 
 /**
- * @brief Salva um comando IR RAW na FRAM para um determinado índice de ação (0 a 9).
+ * @brief Saves a raw IR command to FRAM for a specific action index (0 to 9).
  * 
- * @param action_idx Índice do slot/ação (0 a 9).
- * @param cmd Ponteiro para o comando IR a ser armazenado.
- * @return esp_err_t ESP_OK em caso de sucesso, ESP_ERR_INVALID_ARG se parâmetro incorreto, ou erro de I2C.
+ * @param action_idx Slot/action index (0 to 9).
+ * @param cmd Pointer to the IR command to be stored.
+ * @return esp_err_t ESP_OK on success, ESP_ERR_INVALID_ARG if the parameter is incorrect, or an I2C error.
  */
 esp_err_t app_storage_save_ir_command(uint8_t action_idx, const ir_raw_command_t *cmd);
 
 /**
  * @brief Recupera um comando IR RAW da FRAM a partir de um índice de ação (0 a 9).
  * 
- * @param action_idx Índice do slot/ação (0 a 9).
+ * @param action_idx Slot/action index (0 to 9).
  * @param out_cmd Ponteiro para a estrutura onde o comando lido será copiado.
- * @return esp_err_t ESP_OK em caso de sucesso, ESP_ERR_INVALID_ARG se parâmetro incorreto, ou erro de I2C/Checksum.
+ * @return esp_err_t ESP_OK on success, ESP_ERR_INVALID_ARG if the parameter is incorrect, or an I2C/checksum error.
  */
 esp_err_t app_storage_get_ir_command(uint8_t action_idx, ir_raw_command_t *out_cmd);
 
