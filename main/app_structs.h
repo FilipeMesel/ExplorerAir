@@ -18,17 +18,17 @@
 #define FRAM_RESERVED_BYTES         30 /**< Number of bytes reserved for future fram expansions */
 #define APP_MAIN_EVT_QUEUE          10 /**< APP_MAIN Evt Queue allocation */
 
-#define IR_SLOT_COUNT               10      // Ações 0 a 9 (DESLIGAR, LIGAR, 18°C ... 25°C)
-#define IR_SLOT_SIZE_BYTES          3072    // 3 KB alocados por slot na FRAM
+#define IR_SLOT_COUNT               10      /**< Actions 0 to 9 (OFF, ON, 18°C ​​... 25°C) */
+#define IR_SLOT_SIZE_BYTES          3072    /**< 3 KB allocated per slot in FRAM */
 #define IR_EVT_DOWNLOAD_IR_RAW      255     /**< Event to Download IR Raw */
 
-// --- MÁSCARAS DE BITS DO LAST_ACTION BITMAP ---
-#define LAST_ACTION_REASON_MASK        (1 << 0)     // Bit 0: 0 = Telemetria, 1 = Agendamento
-#define LAST_ACTION_ACTION_MASK        (0x0F << 1)  // Bits 1..4: Slot de Ação IR (0 a 10)
-#define LAST_ACTION_DOWNLOAD_IR_MASK   (1 << 5)     // Bit 5: 1 = Download Solicitado
-#define LAST_ACTION_RAW_SEND_MASK      (1 << 6)     // Bit 6: 1 = Transmissão RAW IR Ativa (CMD 3)
+// --- LAST_ACTION BITMAP BIT MASKS ---
+#define LAST_ACTION_REASON_MASK        (1 << 0)     // Bit 0: 0 = Telemetry, 1 = Scheduling
+#define LAST_ACTION_ACTION_MASK        (0x0F << 1)  // Bits 1..4: IR Action Slot (0 to 10)
+#define LAST_ACTION_DOWNLOAD_IR_MASK   (1 << 5)     // Bit 5: 1 = Download Requested
+#define LAST_ACTION_RAW_SEND_MASK      (1 << 6)     // Bit 6: 1 = Active RAW IR Transmission (CMD 3)
 
-// Macros de Manipulação Bitwise
+// Bitwise Manipulation Macros
 #define GET_LAST_ACTION_REASON(bm)      (((bm) & LAST_ACTION_REASON_MASK) >> 0)
 #define GET_LAST_ACTION_ACTION(bm)      (((bm) & LAST_ACTION_ACTION_MASK) >> 1)
 #define GET_LAST_ACTION_DOWNLOAD(bm)    (((bm) & LAST_ACTION_DOWNLOAD_IR_MASK) >> 5)
@@ -42,7 +42,7 @@
 typedef uint8_t last_action_t;
 
 /**
- * @brief Enum para indexação legível dos slots IR
+ * @brief Enum for readable indexing of IR slots
  */
 typedef enum {
     IR_ACTION_NONE        = 0,
@@ -121,7 +121,7 @@ typedef struct {
     uint8_t schedule_id;                 /**< Schedule ID (0 to 10) */
     uint8_t week_days;                   /**< Bitmask of days + enable bit (LSB) */
     char time[SCHEDULE_TIME_STR_LEN];    /**< "HH:MM" String */
-    ir_action_slot_t action;                /**< Action submitted via scheduling */
+    ir_action_slot_t action;             /**< Action submitted via scheduling */
 } schedule_payload_t;
 
 /**
