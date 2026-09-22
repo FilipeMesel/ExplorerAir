@@ -18,7 +18,6 @@ esp_err_t json_encode_telemetry(const telemetry_data_t *data, char *out_buf, siz
 
     float bat_v = data->battery_mv / 1000.0f;
 
-    // Modificado para passar (int)data->last_action no final
     int len = snprintf(out_buf, max_len,
         "{\"cmd_id\":0,\"temp\":%d,\"umid\":%d,\"rtc\":\"%02d:%02d:%02d\",\"day\":%d,\"month\":%d,\"year\":%d,\"weekday\":%d,\"rssi\":%d,\"bat\":%.2f,\"last_action\":%d}",
         data->temp, 
@@ -327,12 +326,12 @@ esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cm
         return ESP_ERR_NO_MEM;
     }
 
-    // Preenche os campos estáticos
+    // Get static fields
     cJSON_AddNumberToObject(root, "cmd_id", CMD_ID_IR_LEARNED);
     cJSON_AddNumberToObject(root, "action", action_idx);
     cJSON_AddNumberToObject(root, "length", cmd->length);
 
-    // Cria o array raw_data com os valores lidos
+    // Create the raw_data buffer
     cJSON *raw_array = cJSON_CreateArray();
     if (raw_array == NULL) {
         cJSON_Delete(root);
@@ -344,7 +343,7 @@ esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cm
     }
     cJSON_AddItemToObject(root, "raw_data", raw_array);
 
-    // Renderiza a string JSON
+    // Create the Json String
     char *rendered = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
 

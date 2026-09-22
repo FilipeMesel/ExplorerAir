@@ -104,13 +104,13 @@ esp_err_t json_decode_set_ir_raw(const char *json_str, uint8_t *out_action_idx, 
 esp_err_t json_encode_set_ir_raw_ack(uint8_t action_idx, char *pub_buf, size_t max_len);
 
 /**
- * @brief Codifica o comando CMD 3 (IR Learned/Raw) contendo a ação, tamanho e os dados raw.
+ * @brief Encodes the CMD 3 command (IR Learned/Raw), containing the action, size, and raw data.
  * 
- * @param action_idx Índice da ação/slot (0 a 9).
- * @param cmd Ponteiro para a estrutura com os dados do comando IR lido da FRAM.
- * @param pub_buf Buffer de saída para o JSON.
- * @param max_len Tamanho máximo do buffer de saída.
- * @return esp_err_t ESP_OK em caso de sucesso.
+ * @param action_idx Action/slot index (0 to 9).
+ * @param cmd Pointer to the structure containing the IR command data read from FRAM.
+ * @param pub_buf Output buffer for JSON.
+ * @param max_len Maximum output buffer size.
+ * @return esp_err_t ESP_OK in case of success
  */
 esp_err_t json_encode_cmd3_ir_raw(uint8_t action_idx, const ir_raw_command_t *cmd, char *pub_buf, size_t max_len);
 
