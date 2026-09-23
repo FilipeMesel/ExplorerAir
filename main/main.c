@@ -141,10 +141,10 @@ static void app_fsm_task(void *pvParameters) {
                         {
                             last_action_t bm = (last_action_t)wakeup_ctx.pending_action;
 
-                            // Decodifica Bit 0 (Wakeup Reason)
+                            // Decode the Bit 0 (Wakeup Reason)
                             if (GET_LAST_ACTION_REASON(bm) == WAKEUP_REASON_SCHEDULE)
                             {
-                                // Extrai Bits 1..4 (Slot da Ação)
+                                // Extract Bits 1..4 (Action slot)
                                 ir_action_slot_t slot_to_exec = (ir_action_slot_t)GET_LAST_ACTION_ACTION(bm);
 
                                 if (slot_to_exec != IR_ACTION_NONE)
@@ -153,16 +153,16 @@ static void app_fsm_task(void *pvParameters) {
 
                                     if (slot_to_exec == IR_ACTION_POWER_OFF)
                                     {
-                                        // Dispara Power Off 3 vezes
+                                        // Trigger Power Off 3 times
                                         for (int i = 0; i < 3; i++)
                                         {
                                             app_ir_dispatch_action(IR_ACTION_POWER_OFF);
-                                            vTaskDelay(pdMS_TO_TICKS(100)); // Pequeno intervalo entre disparos
+                                            vTaskDelay(pdMS_TO_TICKS(100));
                                         }
                                     }
                                     else if (slot_to_exec == IR_ACTION_POWER_ON)
                                     {
-                                        // Dispara Power On 3 vezes
+                                        // Trigger Power On 3 times
                                         for (int i = 0; i < 3; i++)
                                         {
                                             app_ir_dispatch_action(IR_ACTION_POWER_ON);
@@ -171,7 +171,7 @@ static void app_fsm_task(void *pvParameters) {
                                     }
                                     else if (slot_to_exec >= IR_ACTION_SET_TEMP_18 && slot_to_exec <= IR_ACTION_SET_TEMP_25)
                                     {
-                                        // Dispara Power On 3 vezes
+                                        // Trigger Power On 3 times
                                         ESP_LOGI(TAG, "[FSM] Enviando Power On (3x) antes da temperatura...");
                                         for (int i = 0; i < 3; i++)
                                         {
@@ -179,9 +179,9 @@ static void app_fsm_task(void *pvParameters) {
                                             vTaskDelay(pdMS_TO_TICKS(100));
                                         }
 
-                                        vTaskDelay(pdMS_TO_TICKS(200)); // Pausa entre Power On e Temperatura
+                                        vTaskDelay(pdMS_TO_TICKS(200));
 
-                                        // Dispara a Temperatura solicitada 3 vezes
+                                        // Trigger the temperature
                                         ESP_LOGI(TAG, "[FSM] Enviando Temperatura Slot %d (3x)...", slot_to_exec);
                                         for (int i = 0; i < 3; i++)
                                         {
@@ -247,7 +247,7 @@ static void app_fsm_task(void *pvParameters) {
                     ESP_LOGI(TAG, "[FSM] MQTT Conectado. Processando estado do dispositivo...");
                     app_ui_post_message("WIFI", "CONECTADO", 100);
 
-                    // Envia a telemetria inicial (CMD 0)
+                    // Send the initial telemetry (CMD 0)
                     app_comms_send_initial_telemetry();
 
                     wakeup_context_t ctx = {0};
@@ -321,7 +321,6 @@ static void app_fsm_task(void *pvParameters) {
                 case APP_EVENT_IR_TRANSFER_FAILED:
                     ESP_LOGE(TAG, "[FSM] Falha crítica na transmissão IR (CMD 3 / CMD 2). Exibindo mensagem e desligando...");
 
-                    // Exibe no OLED a mensagem solicitada
                     app_ui_post_message("ERRO ENVIO IR", "DESLIGANDO...", 0);
                     vTaskDelay(pdMS_TO_TICKS(3000));
 
