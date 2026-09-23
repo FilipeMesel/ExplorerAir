@@ -242,28 +242,33 @@ class InteractiveSystemTester:
                 self.last_rx_data = data
                 self.response_event.set()
 
-            elif self.active_test_mode == "SEND_IR" and decoded_action.get("download_pending"):
-                logging.info("📥 ESP32 reportou download_pending ativo no CMD 0. Iniciando envio do Slot 0...")
-                time.sleep(0.1)
-                self.send_cmd_8(0)
+            # SÓ RESPONDE AO DOWNLOAD SE O TESTE 3 ESTIVER EM EXECUÇÃO
+            elif self.active_test_mode == "SEND_IR":
+                if decoded_action.get("download_pending"):
+                    logging.info("📥 ESP32 reportou download_pending ativo no CMD 0. Iniciando envio do Slot 0...")
+                    time.sleep(0.1)
+                    self.send_cmd_8(0)
 
         # --- TRATAMENTO CMD 3: RAW IR CAPTURADO ---
         elif cmd_id == 3:
-            action = data.get("action")
-            raw_data = data.get("raw_data", [])
-            length = data.get("length", 0)
-
-            if action is not None and raw_data:
-                self.captured_ir_raws[action] = raw_data
-                logging.info(f"📥 Pulso IR recebido para Slot {action} ({ACTION_NAMES.get(action, 'UNK')}) - {length} amostras")
-
-            ack = {"cmd_id": 2, "action": action}
-            self.send_downlink(ack)
-
+            # SÓ PROCESSA E RESPONDE COM CMD 2 SE O TESTE 2 ESTIVER EM EXECUÇÃO
             if self.active_test_mode == "LEARN_IR":
+                action = data.get("action")
+                raw_data = data.get("raw_data", [])
+                length = data.get("length", 0)
+
+                if action is not None and raw_data:
+                    self.captured_ir_raws[action] = raw_data
+                    logging.info(f"📥 Pulso IR recebido para Slot {action} ({ACTION_NAMES.get(action, 'UNK')}) - {length} amostras")
+
+                ack = {"cmd_id": 2, "action": action}
+                self.send_downlink(ack)
+
                 self.last_rx_data = data
                 self.response_event.set()
-        
+            else:
+                logging.warning(f"⚠️ [RX] CMD 3 recebido fora do Teste 2 (LEARN_IR). Ignorando resposta.")
+
         # --- TRATAMENTO CMD 5: CONFIRMAÇÃO DE RECONFIGURAÇÃO WI-FI ---
         elif cmd_id == 5:
             logging.info(f"📥 [RX] CMD 5 (Wi-Fi Config ACK) recebido do ESP32: {data}")
@@ -283,6 +288,7 @@ class InteractiveSystemTester:
             received_action = data.get("action")
             logging.info(f"📥 [RX] CMD 9 recebido do ESP32 (action={received_action})")
             
+            # SÓ CONTINUA O CICLO SE O TESTE 3 ESTIVER EM EXECUÇÃO
             if self.active_test_mode == "SEND_IR":
                 self.last_download_action_ack = received_action
                 if received_action in TRIGGER_MAP:
@@ -292,6 +298,8 @@ class InteractiveSystemTester:
                 elif received_action == 9:
                     logging.info("✅ Ciclo de download finalizado com sucesso no ESP32!")
                     self.response_event.set()
+            else:
+                logging.warning(f"⚠️ [RX] CMD 9 recebido fora do Teste 3 (SEND_IR). Ignorando ciclo.")
 
     def send_downlink(self, payload: dict):
         json_str = json.dumps(payload)
