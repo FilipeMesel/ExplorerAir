@@ -1,0 +1,26 @@
+prompts/
+# ESP-IDF / CMake Build output
+build/
+sdkconfig.old
+sdkconfig.ci
+
+# Python / Virtual Environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ESP Component Manager
+dependencies.lock
+main/idf_component.yml
+managed_components/
+
+# Test Script
+test_script/relatorio_teste_explorerAir.pdf
+test_script/telemetry_log.txt
