@@ -24,7 +24,7 @@ static uint8_t s_current_expected_action = 0;
 static const char *TAG = "APP_COMMS";
 
 /**
- * @brief Inicializa a infraestrutura de sincronização de comunicação
+ * @brief Initializes the communication synchronization infrastructure.
  */
 esp_err_t app_comms_init_sync_objects(void) {
     if (s_cmd2_event_group == NULL) {
@@ -38,14 +38,14 @@ esp_err_t app_comms_init_sync_objects(void) {
 }
 
 /**
- * @brief Transmite o slot IR via CMD 3 e aguarda o retorno do CMD 2 com retry (Até 3x por slot)
+ * @brief Transmits the IR slot via CMD 3 and waits for the CMD 2 response with retries (up to 3 times per slot).
  */
 esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
     if (s_cmd2_event_group == NULL) {
         app_comms_init_sync_objects();
     }
 
-    // 1. Aloca os buffers grandes no HEAP em vez da STACK
+    // 1. Allocates large buffers on the heap instead of the stack.
     ir_raw_command_t *ir_cmd_buffer = malloc(sizeof(ir_raw_command_t));
     char *pub_buf = malloc(CONFIG_MQTT_OUT_BUFFER_SIZE);
 
@@ -58,7 +58,7 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
 
     s_current_expected_action = target_slot;
 
-    // 2. Lê os dados RAW do Slot da FRAM
+    // 2. Reads the raw data from the FRAM slot.
     esp_err_t err = app_storage_get_ir_command(target_slot, ir_cmd_buffer);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Falha ao ler Slot IR %d na FRAM (err: %s)", target_slot, esp_err_to_name(err));
@@ -67,10 +67,10 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
         return err;
     }
 
-    // 3. Codifica em JSON (CMD 3)
+    // 3. Encodes in JSON (CMD 3)
     err = json_encode_cmd3_ir_raw(target_slot, ir_cmd_buffer, pub_buf, CONFIG_MQTT_OUT_BUFFER_SIZE);
     
-    // Libera a memória do comando IR após gerar o JSON
+    // Frees the memory used by the IR command after generating the JSON.
     free(ir_cmd_buffer);
 
     if (err != ESP_OK) {
@@ -79,7 +79,7 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
         return err;
     }
 
-    // Loop de tentativas por Slot (Até 3 vezes)
+    // Retry loop per slot (up to 3 times)
     for (int attempt = 1; attempt <= MAX_IR_TX_RETRIES; attempt++) {
         ESP_LOGI(TAG, "[MQTT TX] Envio CMD 3 para Slot/Action %d - Tentativa %d/%d", 
                  target_slot, attempt, MAX_IR_TX_RETRIES);
@@ -99,7 +99,7 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
             if ((bits & CMD2_ACK_BIT) != 0) {
                 ESP_LOGI(TAG, "[MQTT RX] CMD 2 (ACK) recebido com sucesso para Action %d!", target_slot);
                 app_main_refresh_shutdown_timer();
-                free(pub_buf); // Libera o buffer MQTT antes de retornar
+                free(pub_buf); // Flushes the MQTT buffer before returning
                 return ESP_OK;
             } else {
                 ESP_LOGW(TAG, "[TIMEOUT] CMD 2 para Action %d não recebido em %d ms (Tentativa %d/%d)", 
@@ -112,19 +112,19 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 
-    // Libera o buffer no final do erro
+    // Releases the buffer at the end of the error.
     free(pub_buf);
     ESP_LOGE(TAG, "Esgotadas as 3 tentativas para a Action %d!", target_slot);
     return ESP_FAIL;
 }
 
 /**
- * @brief Executa a sequência de envios de Action 0 (Power Off) até Action 9 (25°C)
+ * @brief Executes the sequence of commands from Action 0 (Power Off) to Action 9 (25°C).
  */
 esp_err_t app_comms_run_ir_sequence(void) {
     ESP_LOGI(TAG, "[IR SEQ] Iniciando sequência de comandos IR (Action 0 a 9)...");
 
-    // Loop pelas 10 Ações:
+    // Loop through the 10 actions:
     // 0: Power Off | 1: Power On | 2: 18°C | 3: 19°C | 4: 20°C | 5: 21°C | 6: 22°C | 7: 23°C | 8: 24°C | 9: 25°C
     for (uint8_t action = 0; action <= 9; action++) {
         esp_err_t ret = app_comms_send_ir_raw_slot_with_retry(action);
@@ -132,7 +132,7 @@ esp_err_t app_comms_run_ir_sequence(void) {
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "[IR SEQ] Falha na transmissão da Action %d após 3 tentativas. Abortando sequência!", action);
             
-            // Dispara o evento de falha para a FSM exibir a mensagem no OLED e desligar
+            // Triggers the failure event for the FSM to display the message on the OLED and shut down.
             app_event_t fail_evt = {
                 .type = APP_EVENT_IR_TRANSFER_FAILED
             };
@@ -142,7 +142,7 @@ esp_err_t app_comms_run_ir_sequence(void) {
             return ESP_FAIL;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100)); // Pequena pausa antes de disparar o próximo comando
+        vTaskDelay(pdMS_TO_TICKS(100)); // Short pause before issuing the next command.
     }
 
     ESP_LOGI(TAG, "[IR SEQ] Toda a sequência de comandos IR foi executada e confirmada com sucesso!");
@@ -176,9 +176,9 @@ esp_err_t app_comms_send_ir_download_ack(void) {
     char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};
     uint8_t download_idx = IR_EVT_DOWNLOAD_IR_RAW;
 
-    // Codifica a confirmação (CMD 9) utilizando o idx IR_EVT_DOWNLOAD_IR_RAW
+    // Encodes the confirmation (CMD 9) using the index IR_EVT_DOWNLOAD_IR_RAW.
     if (json_encode_set_ir_raw_ack(download_idx, ack_buf, sizeof(ack_buf)) == ESP_OK) {
-        int msg_id = board_mqtt_publish_uplink(ack_buf, 1); // Publica via QoS 1
+        int msg_id = board_mqtt_publish_uplink(ack_buf, 1); // Publishes via QoS 1
         if (msg_id >= 0) {
             ESP_LOGI(TAG, "[MQTT TX] CMD 9 (DOWNLOAD ACK idx=%d) enviado: %s", download_idx, ack_buf);
             return ESP_OK;
@@ -193,19 +193,19 @@ esp_err_t app_comms_send_ir_download_ack(void) {
 }
 
 esp_err_t app_comms_send_ir_power_off_cmd(void) {
-    // Aloca buffer suficiente para o array raw (recomenda-se no mínimo 2KB/4KB dependendo do número de pulsos)
+    // Allocates a sufficient buffer for the raw array (a minimum of 2 KB/4 KB is recommended, depending on the number of pulses).
     char pub_buf[CONFIG_MQTT_OUT_BUFFER_SIZE] = {0};
     ir_raw_command_t ir_cmd = {0};
-    uint8_t action_idx = 0; // Slot 0 representa o POWER_OFF
+    uint8_t action_idx = 0; // Slot 0 represents POWER_OFF.
 
-    // 1. Busca os dados brutos do IR na FRAM para o Slot 0
+    // 1. Fetches the raw IR data from the FRAM for Slot 0.
     esp_err_t err = app_storage_get_ir_command(action_idx, &ir_cmd);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Falha ao ler comando IR do Slot %d da FRAM (err: %s)", action_idx, esp_err_to_name(err));
         return err;
     }
 
-    // 2. Codifica o JSON no formato CMD 3 desejado
+    // 2. Encodes the JSON into the desired CMD 3 format.
     if (json_encode_cmd3_ir_raw(action_idx, &ir_cmd, pub_buf, sizeof(pub_buf)) == ESP_OK) {
         int msg_id = board_mqtt_publish_uplink(pub_buf, 1); // QoS 1
         if (msg_id >= 0) {
@@ -222,13 +222,13 @@ esp_err_t app_comms_send_ir_power_off_cmd(void) {
 }
 
 /**
- * @brief Lê o comando IR RAW de um slot específico na FRAM e publica no tópico MQTT via CMD 3.
+ * @brief Reads the raw IR command from a specific slot in FRAM and publishes it to the MQTT topic via CMD 3.
  */
 static esp_err_t app_comms_send_ir_raw_slot(uint8_t target_slot) {
     static ir_raw_command_t ir_cmd_buffer;
     char pub_buf[CONFIG_MQTT_OUT_BUFFER_SIZE] = {0};
 
-    // 1. Lê os dados brutos da FRAM para o slot desejado
+    // 1. Reads raw data from the FRAM for the desired slot.
     esp_err_t err = app_storage_get_ir_command(target_slot, &ir_cmd_buffer);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Falha ao ler Slot IR %d na FRAM para envio do CMD 3 (err: %s)", 
@@ -236,14 +236,14 @@ static esp_err_t app_comms_send_ir_raw_slot(uint8_t target_slot) {
         return err;
     }
 
-    // 2. Codifica no formato do CMD 3
+    // 2. Encodes in the CMD 3 format.
     err = json_encode_cmd3_ir_raw(target_slot, &ir_cmd_buffer, pub_buf, sizeof(pub_buf));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Erro ao codificar JSON do CMD 3 para o Slot %d", target_slot);
         return err;
     }
 
-    // 3. Publica via MQTT Uplink
+    // 3. Publishes via MQTT Uplink
     int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
     if (msg_id >= 0) {
         ESP_LOGI(TAG, "[MQTT TX] CMD 3 enviado com sucesso para Slot %d (Length: %d)", 
@@ -259,11 +259,11 @@ static last_action_t get_last_action_from_fram(void) {
     wakeup_context_t wakeup_ctx = {0};
     
     if (app_storage_get_wakeup_context(&wakeup_ctx) == ESP_OK) {
-        // Retorna o bitmap persistido na FRAM
+        // Returns the bitmap persisted in FRAM
         return (last_action_t)wakeup_ctx.pending_action;
     }
     
-    // Fallback: Retorna um bitmap limpo (apenas telemetria regular)
+    // Fallback: Returns a clean bitmap (regular telemetry only)
     last_action_t default_bm = 0;
     SET_LAST_ACTION_REASON(default_bm, WAKEUP_REASON_TELEMETRY);
     SET_LAST_ACTION_ACTION(default_bm, IR_ACTION_NONE);
@@ -395,7 +395,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                 {
                     ESP_LOGI(TAG, "[MQTT RX] CMD 2 recebido para action: %d", requested_action);
 
-                    // Valida se corresponde à ação que está aguardando no handshake
+                    // Validates whether it corresponds to the action being awaited in the handshake.
                     if (requested_action == s_current_expected_action && s_cmd2_event_group != NULL)
                     {
                         xEventGroupSetBits(s_cmd2_event_group, CMD2_ACK_BIT);
@@ -404,7 +404,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     wakeup_context_t ctx = {0};
                     app_storage_get_wakeup_context(&ctx);
 
-                    // Aceita actions até 9 (Power Off até 25 °C)
+                    // Supports up to 9 actions (Power Off at 25°C)
                     if (requested_action < 9)
                     {
                         SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 1);
@@ -471,7 +471,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
             if (json_decode_set_ir_raw(json_str, &action_idx, &ir_cmd_buffer) == ESP_OK)
             {
 
-                // Se for o último slot (9), limpa exclusivamente o bit de DOWNLOAD (Bit 5)
+                // If it is the last slot (9), it clears exclusively the DOWNLOAD bit (Bit 5).
                 if (action_idx == 9)
                 {
                     ESP_LOGI(TAG, "[MQTT RX] Action == 9 recebida. Limpando Bit 5 (DOWNLOAD_IR)...");
@@ -479,14 +479,14 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     wakeup_context_t ctx = {0};
                     if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
                     {
-                        // Modifica APENAS o bit 5 mantendo o restante do bitmap
+                        // Modifies ONLY bit 5, preserving the rest of the bitmap.
                         SET_LAST_ACTION_DOWNLOAD(ctx.pending_action, 0);
                         SET_LAST_ACTION_ACTION(ctx.pending_action, IR_ACTION_NONE);
                         app_storage_save_wakeup_context(&ctx);
                     }
                 }
 
-                // Salva o comando na FRAM e envia o ACK (CMD 9) do slot individual
+                // Saves the command to FRAM and sends the ACK (CMD 9) for the individual slot.
                 if (app_storage_save_ir_command(action_idx, &ir_cmd_buffer) == ESP_OK)
                 {
                     char ack_buf[MQTT_ACK_BUFFER_LEN] = {0};

@@ -69,7 +69,7 @@ static void handle_exit_with_bitmap(bool request_download)
 {
     wakeup_context_t ctx = {0};
 
-    // 1. Lê o contexto atual gravado na FRAM
+    // 1. Reads the current context stored in the FRAM.
     if (app_storage_get_wakeup_context(&ctx) != ESP_OK)
     {
         ESP_LOGE(TAG, "[UI] Falha ao ler wakeup context da FRAM");
@@ -80,7 +80,7 @@ static void handle_exit_with_bitmap(bool request_download)
 
     if (request_download)
     {
-        // Força a solicitação de download via MQTT (CMD 9 / action 255)
+        // Forces the download request via MQTT (CMD 9 / action 255)
         SET_LAST_ACTION_DOWNLOAD(bm, 1);
         SET_LAST_ACTION_ACTION(bm, IR_ACTION_NONE);
         SET_LAST_ACTION_RAW_SEND(bm, 0);
@@ -89,7 +89,7 @@ static void handle_exit_with_bitmap(bool request_download)
     }
     else
     {
-        // Limpa o bit de download e prepara o envio IR local (ex: Power Off / Slot 1)
+        // Clears the download bit and prepares the local IR transmission (e.g., Power Off / Slot 1).
         SET_LAST_ACTION_DOWNLOAD(bm, 0);
         SET_LAST_ACTION_ACTION(bm, IR_ACTION_POWER_OFF);
         SET_LAST_ACTION_RAW_SEND(bm, 1);
@@ -97,7 +97,7 @@ static void handle_exit_with_bitmap(bool request_download)
         ESP_LOGI(TAG, "[UI] Configurando bitmap para execução local de IR (Power Off)");
     }
 
-    // 2. Grava o contexto atualizado de volta na FRAM
+    // 2. Writes the updated context back to FRAM.
     ctx.pending_action = bm;
     if (app_storage_save_wakeup_context(&ctx) == ESP_OK)
     {
@@ -151,15 +151,15 @@ static void app_buttons_task(void *pvParameters) {
     bool last_select = false;
     bool last_enter = false;
 
-    // Renderiza o menu inicial na opção 0 (> APRENDER)
+    // Renders the main menu at option 0 (> LEARN)
     render_main_menu(s_selected_option);
 
     while (1) {
-        // Leitura lógica ativa ALTA (1 = Pressionado)
+        // Active-high logic level (1 = Pressed)
         bool select_pressed = (gpio_get_level(GPIO_BTN_SELECT) == 1);
         bool enter_pressed  = (gpio_get_level(GPIO_BTN_ENTER) == 1);
 
-        // --- REGRA DUAL HOLD (SAÍDA FORÇADA) ---
+        // --- Dual Hold Rule (Forced Exit) ---
         if (select_pressed && enter_pressed) {
             dual_hold_timer_ms += POLL_INTERVAL_MS;
 
@@ -179,7 +179,7 @@ static void app_buttons_task(void *pvParameters) {
             dual_hold_timer_ms = 0; 
 
             // =================================================================
-            // POLLING NÃO-BLOQUEANTE IR (MODO APRENDER)
+            // Non-blocking IR polling (learning mode)
             // =================================================================
             if (s_current_menu == MENU_STATE_IR_LEARN && !s_in_exit_prompt && !s_ir_captured) {
                 ir_raw_command_t temp_cmd;
@@ -196,11 +196,11 @@ static void app_buttons_task(void *pvParameters) {
             }
 
             // =================================================================
-            // TRATAMENTO DO BOTÃO SELECT (GPIO 5) - NAVEGAÇÃO
+            // HANDLING THE SELECT BUTTON (GPIO 5) - NAVIGATION
             // =================================================================
             if (select_pressed && !last_select) {
                 if (s_current_menu == MENU_STATE_MAIN) {
-                    // Cicla entre 0 (Aprender), 1 (Testar) e 2 (Download)
+                    // Cycles between 0 (Learn), 1 (Test), and 2 (Download)
                     s_selected_option = (s_selected_option + 1) % 3;
                     render_main_menu(s_selected_option);
 
@@ -232,29 +232,10 @@ static void app_buttons_task(void *pvParameters) {
                     update_ir_screen();
 
                 }
-                else if (s_current_menu == MENU_STATE_IR_DOWNLOAD)
-                {
-                    // ESP_LOGI(TAG, "Botao pressionado na opcao DOWNLOAD. Salvando flag de envio...");
-
-                    // // Setamos a ação pendente específica que libera a publicação do CMD 9 (idx 255)
-                    
-
-                    // app_ui_post_message("DOWNLOAD", "COMANDOS IR", 1000);
-                    // handle_exit_with_bitmap(true);
-
-                    // // Dispara a conexão para a FSM
-                    // app_event_t evt = {.type = APP_EVENT_EXIT_MENU_TRIGGER_TELEMETRY};
-                    // if (g_app_event_queue)
-                    // {
-                    //     xQueueSend(g_app_event_queue, &evt, 0);
-                    // }
-
-                    // vTaskDelete(NULL); // Finaliza a task de botões
-                }
             }
 
             // =================================================================
-            // TRATAMENTO DO BOTÃO ENTER (GPIO 38) - CONFIRMAÇÃO / AÇÃO
+            // ENTER BUTTON HANDLING (GPIO 38) - CONFIRMATION / ACTION
             // =================================================================
             if (enter_pressed && !last_enter) {
                 if (s_current_menu == MENU_STATE_MAIN) {
@@ -271,18 +252,18 @@ static void app_buttons_task(void *pvParameters) {
                         s_ir_captured = false;
                         update_ir_screen();
                     } else if (s_selected_option == 2) {
-                        // ENTROU NO MODO DOWNLOAD
+                        // Entered Download Mode
                         s_current_menu = MENU_STATE_IR_DOWNLOAD;
                         ESP_LOGI(TAG, "Opcao DOWNLOAD selecionada no menu.");
                         app_ui_post_message("   DOWNLOAD   ", "  DOWNLOAD IR AC  ", 0);
                     }
 
                 } else if (s_in_exit_prompt) {
-                    if (s_exit_prompt_option == 1) { // Selecionou "SAIR"
+                    if (s_exit_prompt_option == 1) { // Selected "EXIT"
                         s_current_menu = MENU_STATE_MAIN;
                         s_in_exit_prompt = false;
                         render_main_menu(s_selected_option);
-                    } else { // Selecionou "CONTINUAR"
+                    } else { // Selected "CONTINUE"
                         s_cmd_index = 0;
                         s_in_exit_prompt = false;
                         s_ir_captured = false;
@@ -315,10 +296,10 @@ static void app_buttons_task(void *pvParameters) {
 
                     app_ui_post_message("DOWNLOAD", "SOLICITADO", 1000);
 
-                    // Configura o bitmap indicando download_request = true e dispara o evento de conexão
+                    // Configures the bitmap by setting download_request = true and triggers the connection event.
                     handle_exit_with_bitmap(true);
 
-                    vTaskDelete(NULL); // Encerra a task de botões
+                    vTaskDelete(NULL); // Closes the button task
                 }
             }
         }

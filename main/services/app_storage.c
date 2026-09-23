@@ -224,7 +224,12 @@ esp_err_t app_storage_clear_telemetry_queue(void) {
     return save_queue_header(&header);
 }
 
-/* Função auxiliar privada para calcular o endereço base de um slot */
+/**
+ * @brief Private helper function to calculate the base address of a slot
+ *
+ * @param action_idx action index
+ * @return * uint16_t Fram data
+ */
 static uint16_t calculate_ir_slot_address(uint8_t action_idx)
 {
     return FRAM_ADDR_IR_RAW_DATA + (action_idx * IR_SLOT_SIZE_BYTES);
@@ -237,7 +242,7 @@ esp_err_t app_storage_save_ir_command(uint8_t action_idx, const ir_raw_command_t
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Valida se a struct não excede o tamanho reservado por slot
+    // Validates that the struct does not exceed the size reserved per slot.
     if (sizeof(ir_raw_command_t) > IR_SLOT_SIZE_BYTES) {
         ESP_LOGE(TAG, "Tamanho do comando IR (%d B) excede limite do slot (%d B)", 
                  (int)sizeof(ir_raw_command_t), IR_SLOT_SIZE_BYTES);
@@ -249,8 +254,6 @@ esp_err_t app_storage_save_ir_command(uint8_t action_idx, const ir_raw_command_t
     ESP_LOGI(TAG, "Salvando comando IR no Slot %d (Addr FRAM: 0x%04X, Pulsos: %d)", 
              action_idx, fram_address, cmd->length);
 
-    // Substitua pela sua chamada nativa/driver de escrita em FRAM I2C
-    // Exemplo: fram_write_bytes(fram_address, (uint8_t *)cmd, sizeof(ir_raw_command_t));
     esp_err_t ret = fram_write(fram_address, (const uint8_t *)cmd, sizeof(ir_raw_command_t));
 
     if (ret != ESP_OK) {
@@ -269,8 +272,6 @@ esp_err_t app_storage_get_ir_command(uint8_t action_idx, ir_raw_command_t *out_c
 
     uint16_t fram_address = calculate_ir_slot_address(action_idx);
 
-    // Substitua pela sua chamada nativa/driver de leitura em FRAM I2C
-    // Exemplo: fram_read_bytes(fram_address, (uint8_t *)out_cmd, sizeof(ir_raw_command_t));
     esp_err_t ret = fram_read(fram_address, (uint8_t *)out_cmd, sizeof(ir_raw_command_t));
 
     if (ret != ESP_OK) {
@@ -278,7 +279,7 @@ esp_err_t app_storage_get_ir_command(uint8_t action_idx, ir_raw_command_t *out_c
         return ret;
     }
 
-    // Validação básica se há um comando válido retornado
+    // Basic validation to check if a valid command is returned.
     if (out_cmd->length == 0 || out_cmd->length > MAX_IR_BUFFER_SIZE) {
         ESP_LOGW(TAG, "Slot IR %d lido está vazio ou corrompido (length: %d)", action_idx, out_cmd->length);
         return ESP_ERR_NOT_FOUND;

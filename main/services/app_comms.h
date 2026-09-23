@@ -50,21 +50,21 @@ void app_comms_on_mqtt_event(void *handler_args, esp_event_base_t base, int32_t 
 esp_err_t app_comms_get_wifi_credentials_from_fram(void);
 
 /**
- * @brief Publica a mensagem de confirmação (CMD 9) especificamente para o índice de Download (idx = 255).
- * @return ESP_OK em caso de sucesso.
+ * @brief Publishes the confirmation message (CMD 9) specifically for the Download index (idx = 255).
+ * @return ESP_OK in case of success
  */
 esp_err_t app_comms_send_ir_download_ack(void);
 
 /**
- * @brief Envia o CMD 3 informando a execução/comando de desligamento IR.
- * @return ESP_OK em caso de sucesso.
+ * @brief Sends CMD 3, signaling the execution of the IR shutdown command.
+ * @return ESP_OK in case of success
  */
 esp_err_t app_comms_send_ir_power_off_cmd(void);
 
 /**
- * @brief Executa a sequência sequencial de envio IR (Action 0 a 9) com controle
- *        de retentativas (3x por ação) e aguardo do CMD 2 (ACK da plataforma).
- * @return ESP_OK se toda a sequência foi concluída com sucesso; ESP_FAIL se algum slot falhar 3x.
+ * @brief Executes the sequential IR transmission sequence (Actions 0 to 9) with control
+ *        of retries (3x per action) and waiting for CMD 2 (platform ACK).
+ * @return ESP_OK if the entire sequence completed successfully; ESP_FAIL if any slot fails 3 times.
  */
 esp_err_t app_comms_run_ir_sequence(void);
 
