@@ -18,6 +18,7 @@ ESP_EVENT_DEFINE_BASE(BOARD_WIFI_EVENTS);
 // Static N-1 known networks
 static const wifi_credential_t g_known_networks[] = {
     {.ssid = "conectaSenfio", .password = "12345678"},
+    {.ssid = "conectasenfio", .password = "12345678"},
     {.ssid = "Senfio_Lab",    .password = "senfio2026"}
 };
 #define KNOWN_NETWORKS_COUNT (sizeof(g_known_networks) / sizeof(wifi_credential_t))

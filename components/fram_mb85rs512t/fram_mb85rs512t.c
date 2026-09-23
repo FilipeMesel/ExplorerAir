@@ -120,6 +120,37 @@ esp_err_t fram_read(uint16_t address, uint8_t *data, size_t len) {
     return ret;
 }
 
+esp_err_t fram_erase_all(uint8_t erase_value) {
+    #define ERASE_CHUNK_SIZE 4096
+
+    uint8_t *buffer = heap_caps_malloc(ERASE_CHUNK_SIZE, MALLOC_CAP_DMA);
+    if (!buffer) {
+        ESP_LOGE(TAG, "Falha ao alocar memória DMA para apagar a FRAM");
+        return ESP_ERR_NO_MEM;
+    }
+
+    memset(buffer, erase_value, ERASE_CHUNK_SIZE);
+
+    esp_err_t ret = ESP_OK;
+    ESP_LOGI(TAG, "Iniciando limpeza total da FRAM (%d KB)...", FRAM_TOTAL_SIZE / 1024);
+
+    for (uint32_t addr = 0; addr < FRAM_TOTAL_SIZE; addr += ERASE_CHUNK_SIZE) {
+        ret = fram_write((uint16_t)addr, buffer, ERASE_CHUNK_SIZE);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Falha ao apagar o bloco no endereço 0x%04X (Erro: %s)", (unsigned int)addr, esp_err_to_name(ret));
+            break;
+        }
+    }
+
+    free(buffer);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "FRAM apagada com sucesso (valor preenchido: 0x%02X)", erase_value);
+    }
+
+    return ret;
+}
+
 /* --- Embedded Self-Test Routine --- */
 
 esp_err_t fram_run_tests(void) {
