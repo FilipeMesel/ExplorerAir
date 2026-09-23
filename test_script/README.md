@@ -66,7 +66,7 @@ pip install paho-mqtt reportlab
 Run the main test script using Python:
 
 ```bash
-python test_all_8.py
+python test_all.py
 ```
 
 ### Interactive Console Flow
