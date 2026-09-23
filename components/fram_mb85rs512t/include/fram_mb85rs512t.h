@@ -48,6 +48,14 @@ esp_err_t fram_read(uint16_t address, uint8_t *data, size_t len);
  */
 esp_err_t fram_run_tests(void);
 
+/**
+ * @brief Erase all files from fram
+ * 
+ * @param erase_value Value used to clear the memory (Normaly 0x00 or 0xFF).
+ * @return esp_err_t ESP_OK in case of success.
+ */
+esp_err_t fram_erase_all(uint8_t erase_value);
+
 #ifdef __cplusplus
 }
 #endif
