@@ -63,6 +63,7 @@ explorerAirConditioner/
 │   ├── fram_mb85rs512t/     # MB85RS512T SPI FRAM Low-Level Driver (Pure Byte Read/Write)
 │   ├── ir_remote/           # RMT Transceiver for RAW Infrared waveforms
 │   └── display_oled/        # OLED Display Controller & Português UI Menu Flow
+├── test_script/             # Folder with python test script suit
 └── main/                    # Main Application Domain Logic
     ├── protocol/            # Messaging Encoders & Serialization
     │   ├── json_protocol.c  # Lightweight JSON Encoders & Parsers for MQTT Payloads
@@ -308,6 +309,28 @@ Where:
 - 8 = 24
 - 9 = 25
 
+### Protocol Exchange Summary Table (`cmd_id`)
+
+| Trigger / Source | Sent Message | Origin `cmd_id` | Origin Description | Expected Response | Response `cmd_id` | Response Description |
+| :--- | :--- | :---: | :--- | :--- | :---: | :--- |
+| **ESP32 → Platform** | `Initial Telemetry` | **CMD 0** | Sends device metrics (temp, humidity, battery, RTC, `last_action`). | `Telemetry ACK / Time Sync` | **CMD 1** | Acknowledges telemetry receipt and synchronizes RTC date/time on ESP32. |
+| **Platform → ESP32** | `Get Learned Command` | **CMD 2** | Platform requests a locally learned IR pulse waveform from memory. | `Learned Command Queue` | **CMD 3** | Transmits raw IR pulse array (`raw_data`) for the requested slot. |
+| **Platform → ESP32** | `WIFI RECEIVED` | **CMD 4** | Transmits new Wi-Fi credentials (`ssid`, `password`) to the ESP32. | `WIFI RECEIVED ACK` | **CMD 5** | ESP32 ACK echoing back the received Wi-Fi credentials for confirmation. |
+| **Platform → ESP32** | `Schedule Provisioning`| **CMD 6** | Configures a schedule alarm (`schedule_id`, `week_days`, `time`, `action`). | `Schedule ACK` | **CMD 7** | ESP32 ACK confirming schedule creation/storage with "OK" status. |
+| **Platform → ESP32** | `Set IR Raw Data` | **CMD 8** | Overwrites/writes raw IR waveforms (`raw_data`) into a specific FRAM slot. | `IR Raw ACK` | **CMD 9** | ESP32 ACK confirming raw IR waveform saved into FRAM memory successfully. |
+
+---
+
+### Communication Pairs Reference
+
+- **`CMD 0` ➔ `CMD 1`**: Device telemetry update triggers platform time synchronization.
+- **`CMD 2` ➔ `CMD 3`**: Platform requests local IR command learned on ESP32 to store in database.
+- **`CMD 4` ➔ `CMD 5`**: Remote Wi-Fi credentials reconfiguration and confirmation handshake.
+- **`CMD 6` ➔ `CMD 7`**: Alarm schedule provision saved into RTC/FRAM and acknowledged.
+- **`CMD 8` ➔ `CMD 9`**: Backend remote raw IR slot population and FRAM write confirmation.
+
+---
+
 ## System Architecture: `last_action` Bitmask & IR Command Sync Flow
 
 The system represents the `last_action` field in telemetry payloads using an 8-bit bitmask structure. This optimized design enables real-time status decoding for deep-sleep wakeups, scheduling triggers, and active IR data streams.
@@ -324,6 +347,7 @@ The system represents the `last_action` field in telemetry payloads using an 8-b
 
 ### `CMD_ID_GET_IR_LEARNED` (cmd_id: 2) & Persistence Sequence Flow
 
+```text
 +----------------+                +-------------------+                +--------------------+
 |  MQTT Broker   |                | ESP32 IR Blaster  |                | FRAM Persistence   |
 +-------+--------+                +---------+---------+                +---------+----------+
@@ -333,6 +357,7 @@ The system represents the `last_action` field in telemetry payloads using an 8-b
         |                                   |--- Reset 30s Shutdown Timer ------>|
         |<-- CMD 3 (RAW IR Slot Payload) ---|                                    |
         |                                   |                                    |
+```
 
 1. **Downlink Request Handling (`cmd_id: 2`)**:
    - The device receives a request containing the targeted `action` index (0 through 8).
