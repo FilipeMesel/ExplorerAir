@@ -24,3 +24,4 @@ managed_components/
 # Test Script
 test_script/relatorio_teste_explorerAir.pdf
 test_script/telemetry_log.txt
+test_script/error_log.txt
