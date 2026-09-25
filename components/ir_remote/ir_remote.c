@@ -16,7 +16,7 @@ static rmt_symbol_word_t s_rx_raw_symbols[MAX_BUFFER_SYMBOLS];
 
 static rmt_receive_config_t s_rx_config = {
     .signal_range_min_ns = 1250,
-    .signal_range_max_ns = 30 * 1000 * 1000, // Timeout de 30ms
+    .signal_range_max_ns = IR_RMT_RECEIVER_TIMEOUT * 1000 * 1000,
 };
 
 static bool IRAM_ATTR ir_rx_done_callback(rmt_channel_handle_t rx_chan, const rmt_rx_done_event_data_t *edata, void *user_ctx) {
