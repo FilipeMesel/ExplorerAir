@@ -494,6 +494,10 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     {
                         board_mqtt_publish_uplink(ack_buf, 1);
                     }
+
+                    char msgBuff[20] = {};
+                    snprintf(msgBuff, sizeof(msgBuff), "COMANDO IR %d/10", action_idx + 1);
+                    app_ui_post_message((const char *)msgBuff, "SALVO!", 200); // Aumentado para 200 ms
                 }
             }
             break;
