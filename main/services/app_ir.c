@@ -17,7 +17,7 @@ static const char *TAG = "APP_IR";
 
 esp_err_t app_ir_init(void)
 {
-    ESP_LOGI(TAG, "Inicializando periférico IR RMT (TX GPIO: %d, RX GPIO: %d)...", 
+    ESP_LOGI(TAG, "Inicializando periférico IR (TX GPIO: %d, RX GPIO: %d)...", 
              CONFIG_IR_TX_GPIO, CONFIG_IR_RX_GPIO);
 
     esp_err_t ret = ir_remote_init(CONFIG_IR_TX_GPIO, CONFIG_IR_RX_GPIO);
@@ -26,7 +26,7 @@ esp_err_t app_ir_init(void)
         return ret;
     }
 
-    ESP_LOGI(TAG, "Driver IR RMT inicializado com sucesso.");
+    ESP_LOGI(TAG, "Driver IR inicializado com sucesso.");
     return ESP_OK;
 }
 

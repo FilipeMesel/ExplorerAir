@@ -244,6 +244,7 @@ static void app_buttons_task(void *pvParameters) {
                         s_cmd_index = 0;
                         s_in_exit_prompt = false;
                         s_ir_captured = false;
+                        ir_remote_resume_ir_receiver();
                         update_ir_screen();
                     } else if (s_selected_option == 1) {
                         s_current_menu = MENU_STATE_IR_TEST;
@@ -282,11 +283,6 @@ static void app_buttons_task(void *pvParameters) {
                     ESP_LOGI(TAG, "Modo Teste: Disparando acao %d (Slot %d)...", current_action, s_cmd_index);
                     
                     esp_err_t ret = app_ir_dispatch_action(current_action);
-                    if (ret == ESP_OK) {
-                        app_ui_post_message("  COMANDO IR  ", " ENVIANDO SUCC! ", 1000);
-                    } else {
-                        app_ui_post_message("  FALHA ENVIO ", " SLOT VAZIO/ERR", 1000);
-                    }
                     update_ir_screen();
 
                 }

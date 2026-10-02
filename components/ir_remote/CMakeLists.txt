@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "ir_remote.c"
+    SRCS "ir_remote.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES driver esp_driver_rmt esp_driver_gpio freertos
+    REQUIRES jorgecis__irremoteidf driver
 )
