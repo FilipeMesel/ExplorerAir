@@ -10,18 +10,7 @@
 extern "C" {
 #endif
 
-#define IR_RESOLUTION_HZ            1000000 /*< 1 MHz (resolution in 1 us) */
-#define CARRIER_FREQ_HZ             38000   /*< 38 kHz for a default IR */
-#define MAX_BUFFER_SYMBOLS          350
 #define MAX_IR_BUFFER_SIZE          700     /*< Maximum raw buffer length */
-
-/**
- * Note: This value MUST NOT be higher than 65ns. If you
- * don't respect this, the ESP32 will restart and show the log below!
- * ERROR LOG: E (282) rmt: rmt_receive(395): signal_range_max_ns too big,
- * should be less than 65535000 ns
- */
-#define IR_RMT_RECEIVER_TIMEOUT     65      /**<RMT Receiver timeout callback. */
 
 /**
  * @brief Structure with the timings (mark/space in µs) of the IR waveform
@@ -55,6 +44,13 @@ esp_err_t ir_remote_read_last_command(ir_raw_command_t *cmd_out);
  * @return esp_err_t ESP_OK in the event of a successful transmission.
  */
 esp_err_t ir_remote_send_command(const ir_raw_command_t *cmd);
+
+/**
+ * @brief Resumes the IR receiver after it has been disabled.
+ * 
+ * @return esp_err_t ESP_OK in case of success
+ */
+esp_err_t ir_remote_resume_ir_receiver();
 
 #ifdef __cplusplus
 }

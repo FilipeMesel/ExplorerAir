@@ -244,6 +244,7 @@ static void app_buttons_task(void *pvParameters) {
                         s_cmd_index = 0;
                         s_in_exit_prompt = false;
                         s_ir_captured = false;
+                        ir_remote_resume_ir_receiver();
                         update_ir_screen();
                     } else if (s_selected_option == 1) {
                         s_current_menu = MENU_STATE_IR_TEST;
