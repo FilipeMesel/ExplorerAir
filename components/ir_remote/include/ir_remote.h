@@ -10,7 +10,12 @@
 extern "C" {
 #endif
 
-#define MAX_IR_BUFFER_SIZE          700     /*< Maximum raw buffer length */
+#define RECEIVE_TIMEOUT_MS                  50                                  /**< Nr. of milli-Seconds of no signal before we stop capturing data. */
+#define MAX_IR_BUFFER_SIZE_BY_LIBRARY       1024                                /**< Nr. of entries to have in the capture buffer. (Default: kRawBuf) */
+#define MAX_IR_BUFFER_SIZE                  (700) /**< Maximum raw buffer length */
+#define MIN_IR_UNKNOWN_SIZE                 12                                  /**< Ignore "UNKNOWN" messages shorter than this. */
+#define IR_MESSAGES_TOLERANCE_PERCENTAGE    45                                  /**< Tolerance percentage (0 - 100) for decoding IR messages. */
+#define IR_FREQUENCY_KHZ                    38                                  /**< Frequency for IR transmission (in kHz). */
 
 /**
  * @brief Structure with the timings (mark/space in µs) of the IR waveform

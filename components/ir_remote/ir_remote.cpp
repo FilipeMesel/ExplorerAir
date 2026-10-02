@@ -3,14 +3,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// Inclusão dos cabeçalhos C++ da biblioteca IRremoteIDF
 #include "IRrecv.h"
 #include "IRsend.h"
 #include "IRutils.h"
 
 static const char *TAG = "IR_REMOTE";
 
-// Instâncias estáticas para RX e TX
+// Static instances for RX and TX
 static IRrecv *s_ir_recv = nullptr;
 static IRsend *s_ir_send = nullptr;
 static decode_results s_rx_results;
@@ -18,7 +17,7 @@ static decode_results s_rx_results;
 esp_err_t ir_remote_init(int gpio_tx, int gpio_rx) {
     ESP_LOGI(TAG, "Inicializando biblioteca IRremoteIDF - TX: %d, RX: %d", gpio_tx, gpio_rx);
 
-    // Alocação e inicialização do emissor IR (TX)
+    // Initializing the IR Sender (TX)
     if (s_ir_send != nullptr) {
         delete s_ir_send;
     }
@@ -29,12 +28,15 @@ esp_err_t ir_remote_init(int gpio_tx, int gpio_rx) {
     }
     s_ir_send->begin();
 
-    // Alocação e inicialização do receptor IR (RX)
-    // bufsize=1024 cobre até 700 elementos de timing de forma segura
+    // Initializing the IR Receiver (RX)
+    // bufsize=1024 covers up to 1023 timing elements safely
     if (s_ir_recv != nullptr) {
         delete s_ir_recv;
     }
-    s_ir_recv = new IRrecv(static_cast<uint16_t>(gpio_rx), 1024, 50, true);
+    s_ir_recv = new IRrecv(static_cast<uint16_t>(gpio_rx), 
+                            MAX_IR_BUFFER_SIZE_BY_LIBRARY, 
+                            RECEIVE_TIMEOUT_MS, 
+                            true);
     if (!s_ir_recv) {
         ESP_LOGE(TAG, "Falha ao alocar memória para IRrecv");
         delete s_ir_send;
@@ -43,10 +45,9 @@ esp_err_t ir_remote_init(int gpio_tx, int gpio_rx) {
     }
 #if DECODE_HASH
     // /// Ignore "UNKNOWN" messages shorter than this.
-    static const uint16_t kMinUnknownSize = 12;
-    s_ir_recv->setUnknownThreshold(kMinUnknownSize);
+    s_ir_recv->setUnknownThreshold(MIN_IR_UNKNOWN_SIZE);
 #endif  // DECODE_HASH
-    s_ir_recv->setTolerance(45);
+    s_ir_recv->setTolerance(IR_MESSAGES_TOLERANCE_PERCENTAGE);
 
     s_ir_recv->enableIRIn();
     ir_remote_resume_ir_receiver();
@@ -62,10 +63,10 @@ esp_err_t ir_remote_read_last_command(ir_raw_command_t *cmd_out) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Leitura não-bloqueante utilizando decode
+    // Non-blocking read using decode
     if (s_ir_recv->decode(&s_rx_results)) {
-        // Quantidade de elementos no buffer RAW capturado
-        uint16_t raw_len = s_rx_results.rawlen - 1; // Desconsidera o gap inicial se aplicável pela lib
+        // Quantity of elements in the captured RAW buffer
+        uint16_t raw_len = s_rx_results.rawlen - 1; // Ignores the initial gap if applicable by the library
 
         if (raw_len > MAX_IR_BUFFER_SIZE) {
             ESP_LOGW(TAG, "Comando IR capturado excedeu o limite máximo (%d > %d). Truncando.", 
@@ -76,14 +77,14 @@ esp_err_t ir_remote_read_last_command(ir_raw_command_t *cmd_out) {
 
         cmd_out->length = raw_len;
 
-        // Copia os valores em microssegundos do buffer da lib para o array struct
+        // Copy the values in microseconds from the library buffer to the struct array
         for (uint16_t i = 0; i < raw_len; i++) {
             cmd_out->data[i] = s_rx_results.rawbuf[i + 1] * kRawTick;
         }
 
         ESP_LOGI(TAG, "Sinal IR capturado com sucesso (%d pulsos).", cmd_out->length);
 
-        // Prepara o receptor para a próxima leitura
+        // Prepare the receiver for the next read
         ir_remote_resume_ir_receiver();
         return ESP_OK;
     }
@@ -104,15 +105,15 @@ esp_err_t ir_remote_send_command(const ir_raw_command_t *cmd) {
 
     ESP_LOGI(TAG, "Transmitindo %d pulsos RAW em 38kHz...", cmd->length);
 
-    // Pausa recepção durante envio para evitar interferências/loopback
+    // Stop reception during transmission to avoid interference/loopback
     if (s_ir_recv) {
         s_ir_recv->disableIRIn();
     }
 
-    // Envio raw com frequência portadora padrão de 38kHz
-    s_ir_send->sendRaw(cmd->data, cmd->length, 38);
+    // Raw transmission with the carrier frequency of 38kHz (common for most devices)
+    s_ir_send->sendRaw(cmd->data, cmd->length, IR_FREQUENCY_KHZ);
 
-    // Reativa a recepção
+    // Resume reception after transmission
     if (s_ir_recv) {
         s_ir_recv->enableIRIn();
         ir_remote_resume_ir_receiver();
