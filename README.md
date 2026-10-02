@@ -16,8 +16,13 @@ A high-reliability, ultra-low-power IoT firmware for smart air conditioner contr
 * **Non-Volatile Data Storage (SPI FRAM):**
   * **MB85RS512T (64 KB):** High-endurance non-volatile memory storing network profiles, 11 weekly schedules (ID 0–10), raw IR signal pulse buffers, and a 500-entry offline telemetry ring buffer.
 
-* **Infrared Engine (RMT Driver):**
-  * High-precision carrier generation for sending and capturing raw IR pulse trains (20°C–25°C, ON, OFF) across multiple HVAC brands.
+* **Infrared Engine (IRREMOTEIDF Library):**
+  * High-precision carrier generation for sending and capturing raw IR pulse trains (18°C–25°C, ON, OFF) across multiple HVAC brands.
+
+Check more about this here:
+```text
+https://github.com/jorgecis/IRremoteIDF
+```
 
 * **MQTT Protocol & Telemetry Synchronization:**
   * Real-time MQTT telemetry updates, scheduling management, time-syncing, and Wi-Fi credential provisioning with failover support across N fallback networks.
@@ -42,7 +47,7 @@ A high-reliability, ultra-low-power IoT firmware for smart air conditioner contr
 | | `FRAM_MISO` | `GPIO 34` | SPI Master Input (Input-Only Pin) |
 | | `FRAM_MOSI` | `GPIO 2` | SPI Master Output |
 | | `FRAM_CS` | `GPIO 16` | FRAM Chip Select |
-| **Infrared (RMT)** | `IR_TX` | `GPIO 25` | Carrier Transmission (NPN Transistor Driver) |
+| **Infrared** | `IR_TX` | `GPIO 25` | Carrier Transmission (NPN Transistor Driver) |
 | | `IR_RX` | `GPIO 35` | Demodulated Receiver (TSOP/VS1838B, Input-Only) |
 | **Sensors & ADC** | Ambient Temp/Humidity | `GPIO 27` | OneWire Protocol (DHT22 / SHT3x) |
 | | Battery Level Read | `GPIO 32` | ADC1 Channel 4 (1:2 Voltage Divider) |
@@ -55,14 +60,15 @@ The project enforces strict modularity. Peripherals and low-level board drivers 
 
 ```text
 explorerAirConditioner/
-├── bootloader_components/   # Custom early-stage bootloader hooks and configurations
-├── components/              # Modular Hardware Peripheral Drivers
-│   ├── board_i2c_bus/       # Centralized I2C Bus Manager (Shared: RTC & Display)
-│   ├── board_spi_bus/       # SPI Bus Manager (Dedicated for FRAM Interface)
-│   ├── rtc_ht8563/          # HT8563ARZ RTC Driver (BCD, Alarm, Timer, INT Flags)
-│   ├── fram_mb85rs512t/     # MB85RS512T SPI FRAM Low-Level Driver (Pure Byte Read/Write)
-│   ├── ir_remote/           # RMT Transceiver for RAW Infrared waveforms
-│   └── display_oled/        # OLED Display Controller & Português UI Menu Flow
+├── bootloader_components/      # Custom early-stage bootloader hooks and configurations
+├── components/                 # Modular Hardware Peripheral Drivers
+│   ├── board_i2c_bus/          # Centralized I2C Bus Manager (Shared: RTC & Display)
+│   ├── board_spi_bus/          # SPI Bus Manager (Dedicated for FRAM Interface)
+│   ├── rtc_ht8563/             # HT8563ARZ RTC Driver (BCD, Alarm, Timer, INT Flags)
+│   ├── fram_mb85rs512t/        # MB85RS512T SPI FRAM Low-Level Driver (Pure Byte Read/Write)
+│   ├── ir_remote/              # Layer to manipulate the IRREMOTEIDF Lib
+│   ├── jorgecis__irremoteidf/  # IR REMOTE IDF Lib implementation
+│   └── display_oled/           # OLED Display Controller & Português UI Menu Flow
 ├── test_script/             # Folder with python test script suit
 └── main/                    # Main Application Domain Logic
     ├── protocol/            # Messaging Encoders & Serialization
@@ -421,6 +427,24 @@ idf.py set-target esp32
 ```bash
 idf.py add-dependency "espressif/mqtt"
 idf.py add-dependency "espressif/cjson^1.7.18"
+```
+
+4. Set the compilation configurations
+
+Go to `menuconfig`
+
+```bash
+idf.py menuconfig
+```
+
+and set:
+
+```text
+Serial Flashe Config → Flash SPI Speed = 26MHz
+Serial Flashe Config → Flash Size = 8MB
+Component config → FreeRTOS → Kernel → Tick rate (Hz) = 1000
+Component config → IRremote → Generate the transmit carrier in hardware
+Compiler options → Optimization Level → Optimize for size (-Os with GCC, -Oz with clang)
 ```
 
 4. Build the Project:
