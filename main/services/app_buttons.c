@@ -39,7 +39,7 @@ static const oled_cmd_action_t COMMAND_SEQUENCE[] = {
     OLED_CMD_TEMP_25
 };
 
-// Mapeamento direto entre o índice da tela (0 a 9) e o enum last_action_t
+// Mapeamento direto entre o índice da tela (0 a valor máximo) e o enum last_action_t
 static const last_action_t ACTION_MAPPING[] = {
     IR_ACTION_POWER_OFF,
     IR_ACTION_POWER_ON,

@@ -122,11 +122,11 @@ esp_err_t app_comms_send_ir_raw_slot_with_retry(uint8_t target_slot) {
  * @brief Executes the sequence of commands from Action 0 (Power Off) to Action 9 (25°C).
  */
 esp_err_t app_comms_run_ir_sequence(void) {
-    ESP_LOGI(TAG, "[IR SEQ] Iniciando sequência de comandos IR (Action 0 a 9)...");
+    ESP_LOGI(TAG, "[IR SEQ] Iniciando sequência de comandos IR (Action 0 a IR_SLOT_COUNT - 1)...");
 
-    // Loop through the 10 actions:
+    // Loop through the actions:
     // 0: Power Off | 1: Power On | 2: 18°C | 3: 19°C | 4: 20°C | 5: 21°C | 6: 22°C | 7: 23°C | 8: 24°C | 9: 25°C
-    for (uint8_t action = 0; action <= 9; action++) {
+    for (uint8_t action = 0; action < IR_SLOT_COUNT; action++) {
         esp_err_t ret = app_comms_send_ir_raw_slot_with_retry(action);
         
         if (ret != ESP_OK) {
@@ -404,15 +404,15 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     wakeup_context_t ctx = {0};
                     app_storage_get_wakeup_context(&ctx);
 
-                    // Supports up to 9 actions (Power Off at 25°C)
-                    if (requested_action < 9)
+                    // Supports up to (IR_SLOT_COUNT - 1) actions (Power Off at 25°C)
+                    if (requested_action < (IR_SLOT_COUNT - 1))
                     {
                         SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 1);
                         app_storage_save_wakeup_context(&ctx);
                     }
                     else
                     {
-                        ESP_LOGW(TAG, "[MQTT RX] CMD 2 com action %d (> 9). Resetando contexto...", requested_action);
+                        ESP_LOGW(TAG, "[MQTT RX] CMD 2 com action %d (> %d). Resetando contexto...", requested_action, IR_SLOT_COUNT - 1);
                         ctx.pending_action = 0;
                         SET_LAST_ACTION_RAW_SEND(ctx.pending_action, 0);
                         app_storage_save_wakeup_context(&ctx);
@@ -471,10 +471,10 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
             if (json_decode_set_ir_raw(json_str, &action_idx, &ir_cmd_buffer) == ESP_OK)
             {
 
-                // If it is the last slot (9), it clears exclusively the DOWNLOAD bit (Bit 5).
-                if (action_idx == 9)
+                // If it is the last slot (IR_SLOT_COUNT - 1), it clears exclusively the DOWNLOAD bit (Bit 5).
+                if (action_idx == (IR_SLOT_COUNT - 1))
                 {
-                    ESP_LOGI(TAG, "[MQTT RX] Action == 9 recebida. Limpando Bit 5 (DOWNLOAD_IR)...");
+                    ESP_LOGI(TAG, "[MQTT RX] Action == %d recebida. Limpando Bit 5 (DOWNLOAD_IR)...", action_idx);
 
                     wakeup_context_t ctx = {0};
                     if (app_storage_get_wakeup_context(&ctx) == ESP_OK)
@@ -496,7 +496,7 @@ esp_err_t app_comms_process_mqtt_command(const char *json_str) {
                     }
 
                     char msgBuff[20] = {};
-                    snprintf(msgBuff, sizeof(msgBuff), "COMANDO IR %d/10", action_idx + 1);
+                    snprintf(msgBuff, sizeof(msgBuff), "COMANDO IR %d/%d", action_idx + 1, IR_SLOT_COUNT);
                     app_ui_post_message((const char *)msgBuff, "SALVO!", 200); // Aumentado para 200 ms
                 }
             }
