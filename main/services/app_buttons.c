@@ -7,7 +7,7 @@
 #include "app_storage.h"
 #include "app_ir.h"
 #include "ir_remote.h"
-#include "services/app_ui.h"
+#include "app_ui.h"
 
 static const char *TAG = "APP_BUTTONS";
 
@@ -26,17 +26,17 @@ typedef enum {
 } menu_state_t;
 
 // Sequência exata de comandos/telas IR
-static const oled_cmd_action_t COMMAND_SEQUENCE[] = {
-    OLED_CMD_POWER_OFF,
-    OLED_CMD_POWER_ON,
-    OLED_CMD_TEMP_18,
-    OLED_CMD_TEMP_19,
-    OLED_CMD_TEMP_20,
-    OLED_CMD_TEMP_21,
-    OLED_CMD_TEMP_22,
-    OLED_CMD_TEMP_23,
-    OLED_CMD_TEMP_24,
-    OLED_CMD_TEMP_25
+static const ui_ir_cmd_action_t COMMAND_SEQUENCE[] = {
+    UI_IR_CMD_POWER_OFF,
+    UI_IR_CMD_POWER_ON,
+    UI_IR_CMD_TEMP_18,
+    UI_IR_CMD_TEMP_19,
+    UI_IR_CMD_TEMP_20,
+    UI_IR_CMD_TEMP_21,
+    UI_IR_CMD_TEMP_22,
+    UI_IR_CMD_TEMP_23,
+    UI_IR_CMD_TEMP_24,
+    UI_IR_CMD_TEMP_25
 };
 
 // Mapeamento direto entre o índice da tela (0 a valor máximo) e o enum last_action_t
@@ -131,10 +131,6 @@ static void render_main_menu(uint8_t option) {
 }
 
 static void update_ir_screen(void) {
-    oled_screen_t screen = (s_current_menu == MENU_STATE_IR_LEARN) 
-                          ? OLED_SCREEN_IR_LEARN 
-                          : OLED_SCREEN_IR_TEST;
-
     if (s_in_exit_prompt) {
         if (s_exit_prompt_option == 0) {
             app_ui_post_message("> CONTINUAR", " SAIR", 0);
@@ -142,7 +138,11 @@ static void update_ir_screen(void) {
             app_ui_post_message("  CONTINUAR ", "> SAIR", 0);
         }
     } else {
-        oled_show_screen(screen, COMMAND_SEQUENCE[s_cmd_index], 0);
+        if (s_current_menu == MENU_STATE_IR_LEARN) {
+            app_ui_post_ir_learn(COMMAND_SEQUENCE[s_cmd_index]);
+        } else if (s_current_menu == MENU_STATE_IR_TEST) {
+            app_ui_post_ir_test(COMMAND_SEQUENCE[s_cmd_index]);
+        }
     }
 }
 
@@ -215,7 +215,7 @@ static void app_buttons_task(void *pvParameters) {
                         
                         s_ir_captured = false;
 
-                        if (s_cmd_index >= TOTAL_COMMANDS - 1) {
+                        if (s_cmd_index + 1 >= TOTAL_COMMANDS) {
                             handle_exit_with_bitmap(false);
 
                             s_in_exit_prompt = true;
@@ -283,6 +283,10 @@ static void app_buttons_task(void *pvParameters) {
                     ESP_LOGI(TAG, "Modo Teste: Disparando acao %d (Slot %d)...", current_action, s_cmd_index);
                     
                     esp_err_t ret = app_ir_dispatch_action(current_action);
+                    if (ret != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Erro ao disparar acao IR: %s", esp_err_to_name(ret));
+                    }
                     update_ir_screen();
 
                 }

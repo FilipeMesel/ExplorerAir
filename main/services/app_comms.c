@@ -221,40 +221,6 @@ esp_err_t app_comms_send_ir_power_off_cmd(void) {
     return ESP_FAIL;
 }
 
-/**
- * @brief Reads the raw IR command from a specific slot in FRAM and publishes it to the MQTT topic via CMD 3.
- */
-static esp_err_t app_comms_send_ir_raw_slot(uint8_t target_slot) {
-    static ir_raw_command_t ir_cmd_buffer;
-    char pub_buf[CONFIG_MQTT_OUT_BUFFER_SIZE] = {0};
-
-    // 1. Reads raw data from the FRAM for the desired slot.
-    esp_err_t err = app_storage_get_ir_command(target_slot, &ir_cmd_buffer);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Falha ao ler Slot IR %d na FRAM para envio do CMD 3 (err: %s)", 
-                 target_slot, esp_err_to_name(err));
-        return err;
-    }
-
-    // 2. Encodes in the CMD 3 format.
-    err = json_encode_cmd3_ir_raw(target_slot, &ir_cmd_buffer, pub_buf, sizeof(pub_buf));
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Erro ao codificar JSON do CMD 3 para o Slot %d", target_slot);
-        return err;
-    }
-
-    // 3. Publishes via MQTT Uplink
-    int msg_id = board_mqtt_publish_uplink(pub_buf, 1);
-    if (msg_id >= 0) {
-        ESP_LOGI(TAG, "[MQTT TX] CMD 3 enviado com sucesso para Slot %d (Length: %d)", 
-                 target_slot, ir_cmd_buffer.length);
-        return ESP_OK;
-    }
-
-    ESP_LOGE(TAG, "Falha ao publicar CMD 3 para Slot %d no broker MQTT", target_slot);
-    return ESP_FAIL;
-}
-
 static last_action_t get_last_action_from_fram(void) {
     wakeup_context_t wakeup_ctx = {0};
     

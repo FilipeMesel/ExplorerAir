@@ -13,7 +13,24 @@ extern "C" {
 #define DISPLAY_LINE_LENGTH         20
 
 /**
- * @brief Types of commands accepted by the UI service queue
+ * @brief Enums para as ações de comandos IR exibidas na UI
+ */
+typedef enum {
+    UI_IR_CMD_POWER_OFF = 0,
+    UI_IR_CMD_POWER_ON,
+    UI_IR_CMD_TEMP_18,
+    UI_IR_CMD_TEMP_19,
+    UI_IR_CMD_TEMP_20,
+    UI_IR_CMD_TEMP_21,
+    UI_IR_CMD_TEMP_22,
+    UI_IR_CMD_TEMP_23,
+    UI_IR_CMD_TEMP_24,
+    UI_IR_CMD_TEMP_25,
+    UI_IR_CMD_MAX
+} ui_ir_cmd_action_t;
+
+/**
+ * @brief Tipos de comandos aceites pela fila do serviço de UI
  */
 typedef enum {
     UI_CMD_UPDATE_HEADER,
@@ -28,7 +45,7 @@ typedef enum {
 } ui_cmd_type_t;
 
 /**
- * @brief Structure of the message transmitted on the UI queue
+ * @brief Estrutura de mensagens enviadas para a UI
  */
 typedef struct {
     ui_cmd_type_t type;
@@ -43,7 +60,7 @@ typedef struct {
         } main_menu;
 
         struct {
-            oled_cmd_action_t action;
+            ui_ir_cmd_action_t action;
         } ir_step;
 
         struct {
@@ -55,22 +72,20 @@ typedef struct {
 } ui_msg_t;
 
 /**
- * @brief Initializes the display, creates the app_ui queue, and launches the UI Task.
+ * @brief Inicialização e encerramento do serviço de UI
  */
 esp_err_t app_ui_init(void);
-
-/**
- * @brief Terminates the UI service and destroys resources.
- */
 esp_err_t app_ui_deinit(void);
 
 /* =========================================================================
- * APIs Thread-safe for sending messages to the UI
+ * APIs Thread-safe para comunicação com a UI
  * ========================================================================= */
 
 esp_err_t app_ui_post_header(uint16_t battery_mv, const char *fw_version);
 esp_err_t app_ui_post_booting(void);
 esp_err_t app_ui_post_main_menu(uint8_t selected_index);
+esp_err_t app_ui_post_ir_learn(ui_ir_cmd_action_t action);
+esp_err_t app_ui_post_ir_test(ui_ir_cmd_action_t action);
 esp_err_t app_ui_post_wifi_error(void);
 esp_err_t app_ui_post_message(const char *line1, const char *line2, uint32_t display_ms);
 esp_err_t app_ui_post_sleep_prep(void);
