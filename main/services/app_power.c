@@ -132,7 +132,7 @@ static esp_err_t execute_pending_fram_action(void) {
         case IR_ACTION_SET_TEMP_24:
         case IR_ACTION_SET_TEMP_25:
         case IR_ACTION_SET_TEMP_26:
-            ESP_LOGI(TAG, "Acao de temperatura disparada: %d", wakeup_ctx.pending_action);
+            ESP_LOGI(TAG, "Acao de temperatura disparada: %d com sucesso", wakeup_ctx.pending_action);
             break;
         default:
             ESP_LOGW(TAG, "Acao IR desconhecida: %d", wakeup_ctx.pending_action);
