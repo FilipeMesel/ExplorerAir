@@ -35,8 +35,8 @@ esp_err_t app_ir_action_to_slot(ir_action_slot_t action, uint8_t *out_slot)
     if (!out_slot) return ESP_ERR_INVALID_ARG;
 
     // Validates the range of valid actions.
-    if (action >= IR_ACTION_POWER_OFF && action <= IR_ACTION_SET_TEMP_25) {
-        *out_slot = (uint8_t)(action - 1); // 1 becomes slot 0, 2 becomes slot 1, etc.
+    if (action >= IR_ACTION_POWER_OFF && action < IR_ACTION_SLOT_END) {
+        *out_slot = (uint8_t)(action); // 1 becomes slot 0, 2 becomes slot 1, etc.
         return ESP_OK;
     }
 

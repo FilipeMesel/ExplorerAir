@@ -1,11 +1,8 @@
 /**
  * @file display_oled.h
- * @brief SSD1306/SH1106 OLED Display UI Driver over Shared I2C Bus for ESP-IDF v6.0+
+ * @brief SSD1306 Low-Level Graphics Driver over Shared I2C Bus.
  * @author Embedded Software Team
  * @date 2026
- * 
- * Provides UI rendering, header info (firmware version and battery level),
- * and menu systems in Portuguese for the explorerAirConditioner project.
  */
 
 #ifndef DISPLAY_OLED_H
@@ -24,92 +21,92 @@ extern "C" {
 #define OLED_HEIGHT             64      /**< Display height in pixels */
 
 /**
- * @brief Application Screen/State Identifiers.
- */
-typedef enum {
-    OLED_SCREEN_BOOT = 0,       /**< Boot/Initialization Screen */
-    OLED_SCREEN_MENU_MAIN,      /**< Main Menu Screen (1. Aprender / 2. Testar) */
-    OLED_SCREEN_IR_LEARN,       /**< IR Learning Routine Screen */
-    OLED_SCREEN_IR_TEST,        /**< IR Testing Routine Screen */
-    OLED_SCREEN_WIFI_ERROR,     /**< Wi-Fi Error Screen */
-    OLED_SCREEN_SLEEP_PREP      /**< Deep Sleep Preparation Screen */
-} oled_screen_t;
-
-/**
- * @brief IR Command Action Labels (Portuguese UI).
- */
-typedef enum {
-    OLED_CMD_POWER_OFF = 0,     /**< "DESLIGAR" */
-    OLED_CMD_POWER_ON,          /**< "LIGAR" */
-    OLED_CMD_TEMP_18,           /**< "18 Graus" */
-    OLED_CMD_TEMP_19,           /**< "19 Graus" */
-    OLED_CMD_TEMP_20,           /**< "20 Graus" */
-    OLED_CMD_TEMP_21,           /**< "21 Graus" */
-    OLED_CMD_TEMP_22,           /**< "22 Graus" */
-    OLED_CMD_TEMP_23,           /**< "23 Graus" */
-    OLED_CMD_TEMP_24,           /**< "24 Graus" */
-    OLED_CMD_TEMP_25,           /**< "25 Graus" */
-    OLED_CMD_MAX
-} oled_cmd_action_t;
-
-/**
- * @brief Initialize the OLED display attached to the shared I2C bus.
- * 
- * @param[in] i2c_addr Target I2C slave address (e.g. 0x3C).
- * @return 
- *      - ESP_OK: Display successfully initialized.
- *      - ESP_ERR_INVALID_STATE: Shared I2C bus not initialized.
- *      - ESP_FAIL: Communication failure during initialization sequence.
+ * @brief Initialize the OLED display controller on the shared I2C bus.
+ *
+ * @param[in] i2c_addr Target I2C slave address (e.g., 0x3C).
+ * @return ESP_OK on success, or an error code on failure.
  */
 esp_err_t oled_init(uint8_t i2c_addr);
 
 /**
- * @brief Deinitialize the OLED display and remove it from the shared I2C bus.
- * 
- * @return esp_err_t 
+ * @brief Deinitialize the OLED display and detach from I2C bus.
+ *
+ * @return ESP_OK on success.
  */
 esp_err_t oled_deinit(void);
 
 /**
- * @brief Clear display frame buffer and refresh screen.
- * 
- * @return esp_err_t ESP_OK on success.
+ * @brief Clear the internal framebuffer and update display.
+ *
+ * @return ESP_OK on success.
  */
 esp_err_t oled_clear(void);
 
 /**
- * @brief Update top header metrics (Firmware Version and Battery Percentage).
- * 
- * @param[in] battery_percentage Battery level value (0 - 100%).
- * @param[in] fw_version String representation of firmware version (e.g., "v1.0").
+ * @brief Flush framebuffer memory to the OLED display controller.
+ *
+ * @return ESP_OK on success.
  */
-void oled_set_header_info(uint8_t battery_percentage, const char *fw_version);
+esp_err_t oled_flush(void);
+
+/* =========================================================================
+ * GRAPHICS & DRAWING PRIMITIVES
+ * ========================================================================= */
 
 /**
- * @brief Render a target UI screen state with options and header context.
- * 
- * @param[in] screen Screen enum to render.
- * @param[in] action Current active IR action (used in Learn/Test screens).
- * @param[in] selected_index Menu selection cursor index (0 or 1).
- * @return esp_err_t ESP_OK on success.
+ * @brief Set or clear a pixel in the framebuffer.
+ *
+ * @param[in] x X coordinate (0..127).
+ * @param[in] y Y coordinate (0..63).
+ * @param[in] color True for white pixel, false for black pixel.
  */
-esp_err_t oled_show_screen(oled_screen_t screen, oled_cmd_action_t action, uint8_t selected_index);
+void oled_draw_pixel(int x, int y, bool color);
 
 /**
- * @brief Render two custom text lines centered in the display area.
- * 
- * @param[in] line1 First line string.
- * @param[in] line2 Second line string.
- * @return esp_err_t ESP_OK on success.
+ * @brief Draw a horizontal line.
+ *
+ * @param[in] x Start X coordinate.
+ * @param[in] y Y coordinate.
+ * @param[in] width Line length in pixels.
+ * @param[in] color True for white, false for black.
  */
-esp_err_t oled_show_message(const char *line1, const char *line2);
+void oled_draw_hline(int x, int y, int width, bool color);
 
 /**
- * @brief Execute a standalone visual self-test procedure for display validation.
- * 
- * @note Active when CONFIG_OLED_RUN_TESTS is set in Kconfig.
+ * @brief Render a single 5x7 ASCII character.
+ *
+ * @param[in] x X coordinate.
+ * @param[in] y Y coordinate.
+ * @param[in] c Character byte.
  */
-void oled_run_tests(void);
+void oled_draw_char_5x7(int x, int y, char c);
+
+/**
+ * @brief Render a string using 5x7 font.
+ *
+ * @param[in] x X coordinate.
+ * @param[in] y Y coordinate.
+ * @param[in] str Null-terminated string.
+ */
+void oled_draw_string_5x7(int x, int y, const char *str);
+
+/**
+ * @brief Render a single 3x5 numeric/small character.
+ *
+ * @param[in] x X coordinate.
+ * @param[in] y Y coordinate.
+ * @param[in] c Character byte.
+ */
+void oled_draw_char_3x5(int x, int y, char c);
+
+/**
+ * @brief Render a string using 3x5 font.
+ *
+ * @param[in] x X coordinate.
+ * @param[in] y Y coordinate.
+ * @param[in] str Null-terminated string.
+ */
+void oled_draw_string_3x5(int x, int y, const char *str);
 
 #ifdef __cplusplus
 }

@@ -169,7 +169,7 @@ static void app_fsm_task(void *pvParameters) {
                                             vTaskDelay(pdMS_TO_TICKS(100));
                                         }
                                     }
-                                    else if (slot_to_exec >= IR_ACTION_SET_TEMP_18 && slot_to_exec <= IR_ACTION_SET_TEMP_25)
+                                    else if (slot_to_exec >= IR_ACTION_SET_TEMP_18 && slot_to_exec < IR_ACTION_SLOT_END)
                                     {
                                         // Trigger Power On 3 times
                                         ESP_LOGI(TAG, "[FSM] Enviando Power On (3x) antes da temperatura...");

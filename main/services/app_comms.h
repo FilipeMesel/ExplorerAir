@@ -62,7 +62,7 @@ esp_err_t app_comms_send_ir_download_ack(void);
 esp_err_t app_comms_send_ir_power_off_cmd(void);
 
 /**
- * @brief Executes the sequential IR transmission sequence (Actions 0 to 9) with control
+ * @brief Executes the sequential IR transmission sequence (Actions 0 to maximum value) with control
  *        of retries (3x per action) and waiting for CMD 2 (platform ACK).
  * @return ESP_OK if the entire sequence completed successfully; ESP_FAIL if any slot fails 3 times.
  */

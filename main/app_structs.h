@@ -18,7 +18,6 @@
 #define FRAM_RESERVED_BYTES         30 /**< Number of bytes reserved for future fram expansions */
 #define APP_MAIN_EVT_QUEUE          10 /**< APP_MAIN Evt Queue allocation */
 
-#define IR_SLOT_COUNT               10      /**< Actions 0 to 9 (OFF, ON, 18°C ​​... 25°C) */
 #define IR_SLOT_SIZE_BYTES          3072    /**< 3 KB allocated per slot in FRAM */
 #define IR_EVT_DOWNLOAD_IR_RAW      255     /**< Event to Download IR Raw */
 
@@ -39,26 +38,63 @@
 #define SET_LAST_ACTION_DOWNLOAD(bm, val) ((bm) = ((bm) & ~LAST_ACTION_DOWNLOAD_IR_MASK) | (((val) ? 1 : 0) << 5))
 #define SET_LAST_ACTION_RAW_SEND(bm, val) ((bm) = ((bm) & ~LAST_ACTION_RAW_SEND_MASK) | (((val) ? 1 : 0) << 6))
 
-typedef uint8_t last_action_t;
+
+
+/* =========================================================================
+ * SINGLE SOURCE OF TRUTH FOR IR COMMANDS (X-MACRO)
+ * 
+ * Para AUMENTAR ou DIMINUIR a quantidade de comandos IR no projeto,
+ * modifique APENAS esta lista abaixo!
+ * Formato: X(ENUM_NAME, DISPLAY_LABEL)
+ * ========================================================================= */
+#define IR_COMMAND_LIST(X) \
+    X(IR_ACTION_POWER_OFF,   "DESLIGAR") \
+    X(IR_ACTION_POWER_ON,    "LIGAR")    \
+    X(IR_ACTION_SET_TEMP_18, "18 C")     \
+    X(IR_ACTION_SET_TEMP_19, "19 C")     \
+    X(IR_ACTION_SET_TEMP_20, "20 C")     \
+    X(IR_ACTION_SET_TEMP_21, "21 C")     \
+    X(IR_ACTION_SET_TEMP_22, "22 C")     \
+    X(IR_ACTION_SET_TEMP_23, "23 C")     \
+    X(IR_ACTION_SET_TEMP_24, "24 C")     \
+    X(IR_ACTION_SET_TEMP_25, "25 C")
 
 /**
- * @brief Enum for readable indexing of IR slots
+ * @brief Enum para indexação legível dos slots IR
  */
 typedef enum {
-    IR_ACTION_NONE        = 0,
-    IR_ACTION_POWER_OFF   = 1,
-    IR_ACTION_POWER_ON    = 2,
-    IR_ACTION_SET_TEMP_18 = 3,
-    IR_ACTION_SET_TEMP_19 = 4,
-    IR_ACTION_SET_TEMP_20 = 5,
-    IR_ACTION_SET_TEMP_21 = 6,
-    IR_ACTION_SET_TEMP_22 = 7,
-    IR_ACTION_SET_TEMP_23 = 8,
-    IR_ACTION_SET_TEMP_24 = 9,
-    IR_ACTION_SET_TEMP_25 = 10,
-    IR_ACTION_LEARNED_ACK,
-    IR_ACTION_DOWNLOAD_ACK
+
+    // 1. Expansão única do X-Macro
+    // O primeiro item da lista (IR_ACTION_POWER_OFF) assume 0 automaticamente,
+    // e os demais assumem 1, 2, 3... sequencialmente.
+#define X(enum_name, label) enum_name,
+    IR_COMMAND_LIST(X)
+#undef X
+
+    // 2. Marcador dinâmico de fim (como o primeiro foi 0, este valor indica o total de slots)
+    IR_ACTION_SLOT_END,
+
+    IR_ACTION_NONE = 250, // Valor neutro/inválido fora da faixa de slots
+    IR_ACTION_LEARNED_ACK = 251,
+    IR_ACTION_DOWNLOAD_ACK = 252,
+    
+    IR_ACTION_COUNT_TOTAL
 } ir_action_slot_t;
+
+/**
+ * @brief Quantidade de slots/comandos IR físicos configurados (dinâmico)
+ */
+#define IR_SLOT_COUNT IR_ACTION_SLOT_END
+
+/**
+ * @brief Estrutura de metadados para gerenciamento dinâmico dos comandos IR
+ */
+typedef struct {
+    uint8_t slot_index;     /**< Índice do Slot de memória (0, 1, 2...) */
+    const char *label;      /**< Texto legível para exibição na UI/OLED */
+} ir_cmd_info_t;
+
+typedef uint8_t last_action_t;
 
 /**
  * @brief Configuration structure saved in FRAM

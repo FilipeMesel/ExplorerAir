@@ -1,14 +1,16 @@
 /**
  * @file app_ui.c
- * @brief High-Level Asynchronous Thread-Safe UI Service Implementation.
+ * @brief High-Level Asynchronous Thread-Safe UI Service & Layout Business Logic.
  */
 
-#include "services/app_ui.h"
+#include "app_ui.h"
 #include <string.h>
+#include <stdio.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "display_oled.h"
 
 static const char *TAG = "APP_UI";
 
@@ -19,56 +21,116 @@ static const char *TAG = "APP_UI";
 static QueueHandle_t s_ui_queue = NULL;
 static TaskHandle_t  s_ui_task_handle = NULL;
 
+static uint8_t s_battery_pct = 100;
+static char s_fw_version[DISPLAY_FW_VERSION_LENGTH] = "v1.0";
+
+/* Localized Strings (Business Logic UI mappings) */
+#define X_STR(enum_name, label) label,
+static const char *s_action_strings[] = {
+    IR_COMMAND_LIST(X_STR)
+};
+#undef X_STR
+
 static uint8_t convert_mv_to_percentage(uint16_t battery_mv) {
     if (battery_mv >= BATTERY_MAX_MV) return 100;
     if (battery_mv <= BATTERY_MIN_MV) return 0;
     return (uint8_t)(((uint32_t)(battery_mv - BATTERY_MIN_MV) * 100) / (BATTERY_MAX_MV - BATTERY_MIN_MV));
 }
 
+static void render_header(void) {
+    // Top Left: Firmware Version
+    oled_draw_string_5x7(0, 0, s_fw_version);
+
+    // Top Right: Battery Percentage
+    char bat_str[8];
+    snprintf(bat_str, sizeof(bat_str), "%d%%", s_battery_pct);
+    int bat_x = OLED_WIDTH - (strlen(bat_str) * 6);
+    oled_draw_string_5x7(bat_x > 0 ? bat_x : 0, 0, bat_str);
+
+    // Header Divider Line (y = 9)
+    oled_draw_hline(0, 9, OLED_WIDTH, true);
+}
+
+static void render_centered_string(int y, const char *str) {
+    if (!str) return;
+    int x = (OLED_WIDTH - (strlen(str) * 6)) / 2;
+    oled_draw_string_5x7(x > 0 ? x : 0, y, str);
+}
+
 /**
- * @brief Consumer task dedicated exclusively to drawing on the screen.
+ * @brief UI Execution Task consuming and rendering queued layout commands.
  */
 static void app_ui_task(void *pvParameters) {
     ui_msg_t msg;
-    ESP_LOGI(TAG, "Task de UI pronta e aguardando comandos...");
+    ESP_LOGI(TAG, "UI Task running and waiting for events...");
 
     while (1) {
         if (xQueueReceive(s_ui_queue, &msg, portMAX_DELAY) == pdTRUE) {
             switch (msg.type) {
-                case UI_CMD_UPDATE_HEADER: {
-                    uint8_t pct = convert_mv_to_percentage(msg.data.header.battery_mv);
-                    oled_set_header_info(pct, msg.data.header.fw_version);
+                case UI_CMD_UPDATE_HEADER:
+                    s_battery_pct = convert_mv_to_percentage(msg.data.header.battery_mv);
+                    strncpy(s_fw_version, msg.data.header.fw_version, sizeof(s_fw_version) - 1);
                     break;
-                }
+
                 case UI_CMD_SHOW_BOOT:
-                    oled_show_screen(OLED_SCREEN_BOOT, OLED_CMD_POWER_OFF, 0);
+                    oled_clear();
+                    render_header();
+                    render_centered_string(32, "EXPLORER");
+                    oled_flush();
                     break;
 
                 case UI_CMD_SHOW_MAIN_MENU:
-                    oled_show_screen(OLED_SCREEN_MENU_MAIN, OLED_CMD_POWER_OFF, msg.data.main_menu.selected_index);
+                    oled_clear();
+                    render_header();
+                    oled_draw_string_5x7(10, 24, msg.data.main_menu.selected_index == 0 ? "> 1. APRENDER" : "  1. APRENDER");
+                    oled_draw_string_5x7(10, 44, msg.data.main_menu.selected_index == 1 ? "> 2. TESTAR"   : "  2. TESTAR");
+                    oled_flush();
                     break;
 
                 case UI_CMD_SHOW_IR_LEARN:
-                    oled_show_screen(OLED_SCREEN_IR_LEARN, msg.data.ir_step.action, 0);
+                    oled_clear();
+                    render_header();
+                    oled_draw_string_5x7(15, 22, "APRENDER IR:");
+                    if (msg.data.ir_step.action < UI_IR_CMD_MAX) {
+                        render_centered_string(42, s_action_strings[msg.data.ir_step.action]);
+                    }
+                    oled_flush();
                     break;
 
                 case UI_CMD_SHOW_IR_TEST:
-                    oled_show_screen(OLED_SCREEN_IR_TEST, msg.data.ir_step.action, 0);
+                    oled_clear();
+                    render_header();
+                    oled_draw_string_5x7(20, 22, "TESTAR IR:");
+                    if (msg.data.ir_step.action < UI_IR_CMD_MAX) {
+                        render_centered_string(42, s_action_strings[msg.data.ir_step.action]);
+                    }
+                    oled_flush();
                     break;
 
                 case UI_CMD_SHOW_WIFI_ERROR:
-                    oled_show_screen(OLED_SCREEN_WIFI_ERROR, OLED_CMD_POWER_OFF, 0);
+                    oled_clear();
+                    render_header();
+                    render_centered_string(24, "ERRO WIFI");
+                    render_centered_string(44, "SEM CONEXAO!");
+                    oled_flush();
                     break;
 
                 case UI_CMD_SHOW_MESSAGE:
-                    oled_show_message(msg.data.message.line1, msg.data.message.line2);
+                    oled_clear();
+                    render_header();
+                    render_centered_string(24, msg.data.message.line1);
+                    render_centered_string(44, msg.data.message.line2);
+                    oled_flush();
                     if (msg.data.message.display_ms > 0) {
                         vTaskDelay(pdMS_TO_TICKS(msg.data.message.display_ms));
                     }
                     break;
 
                 case UI_CMD_SHOW_SLEEP_PREP:
-                    oled_show_screen(OLED_SCREEN_SLEEP_PREP, OLED_CMD_POWER_OFF, 0);
+                    oled_clear();
+                    render_header();
+                    render_centered_string(32, "ENTRANDO SLEEP");
+                    oled_flush();
                     break;
 
                 case UI_CMD_CLEAR:
@@ -83,27 +145,27 @@ static void app_ui_task(void *pvParameters) {
 }
 
 /* =========================================================================
- * INITIALIZATION & DEINIT
+ * SERVICE INIT & DEINIT
  * ========================================================================= */
 
 esp_err_t app_ui_init(void) {
-    ESP_LOGI(TAG, "Inicializando Serviço AsSEncrono de UI...");
+    ESP_LOGI(TAG, "Initializing Asynchronous UI Service...");
     
     esp_err_t ret = oled_init(OLED_I2C_ADDR_DEFAULT);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Falha ao inicializar o driver OLED: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to initialize OLED driver: %s", esp_err_to_name(ret));
         return ret;
     }
 
     s_ui_queue = xQueueCreate(UI_QUEUE_LEN, sizeof(ui_msg_t));
     if (s_ui_queue == NULL) {
-        ESP_LOGE(TAG, "Falha ao criar a fila de UI!");
+        ESP_LOGE(TAG, "Failed to create UI queue!");
         return ESP_ERR_NO_MEM;
     }
 
     BaseType_t task_ret = xTaskCreate(app_ui_task, "app_ui_task", 3072, NULL, 4, &s_ui_task_handle);
     if (task_ret != pdPASS) {
-        ESP_LOGE(TAG, "Falha ao criar a Task da UI!");
+        ESP_LOGE(TAG, "Failed to create UI Task!");
         vQueueDelete(s_ui_queue);
         s_ui_queue = NULL;
         return ESP_FAIL;
@@ -127,13 +189,13 @@ esp_err_t app_ui_deinit(void) {
 }
 
 /* =========================================================================
- * IMPLEMENTATION OF POST APIs (THREAD-SAFE)
+ * POST API IMPLEMENTATIONS
  * ========================================================================= */
 
 static esp_err_t send_to_ui_queue(const ui_msg_t *msg) {
     if (s_ui_queue == NULL) return ESP_ERR_INVALID_STATE;
     if (xQueueSend(s_ui_queue, msg, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Fila de UI cheia! Mensagem descartada.");
+        ESP_LOGW(TAG, "UI Queue Full! Dropping message.");
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
@@ -154,6 +216,18 @@ esp_err_t app_ui_post_booting(void) {
 esp_err_t app_ui_post_main_menu(uint8_t selected_index) {
     ui_msg_t msg = { .type = UI_CMD_SHOW_MAIN_MENU };
     msg.data.main_menu.selected_index = selected_index;
+    return send_to_ui_queue(&msg);
+}
+
+esp_err_t app_ui_post_ir_learn(ui_ir_cmd_action_t action) {
+    ui_msg_t msg = { .type = UI_CMD_SHOW_IR_LEARN };
+    msg.data.ir_step.action = action;
+    return send_to_ui_queue(&msg);
+}
+
+esp_err_t app_ui_post_ir_test(ui_ir_cmd_action_t action) {
+    ui_msg_t msg = { .type = UI_CMD_SHOW_IR_TEST };
+    msg.data.ir_step.action = action;
     return send_to_ui_queue(&msg);
 }
 
