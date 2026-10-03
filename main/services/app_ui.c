@@ -25,18 +25,11 @@ static uint8_t s_battery_pct = 100;
 static char s_fw_version[DISPLAY_FW_VERSION_LENGTH] = "v1.0";
 
 /* Localized Strings (Business Logic UI mappings) */
-static const char *s_action_strings[UI_IR_CMD_MAX] = {
-    [UI_IR_CMD_POWER_OFF] = "DESLIGAR",
-    [UI_IR_CMD_POWER_ON]  = "LIGAR",
-    [UI_IR_CMD_TEMP_18]   = "18 C",
-    [UI_IR_CMD_TEMP_19]   = "19 C",
-    [UI_IR_CMD_TEMP_20]   = "20 C",
-    [UI_IR_CMD_TEMP_21]   = "21 C",
-    [UI_IR_CMD_TEMP_22]   = "22 C",
-    [UI_IR_CMD_TEMP_23]   = "23 C",
-    [UI_IR_CMD_TEMP_24]   = "24 C",
-    [UI_IR_CMD_TEMP_25]   = "25 C"
+#define X_STR(enum_name, label) label,
+static const char *s_action_strings[] = {
+    IR_COMMAND_LIST(X_STR)
 };
+#undef X_STR
 
 static uint8_t convert_mv_to_percentage(uint16_t battery_mv) {
     if (battery_mv >= BATTERY_MAX_MV) return 100;

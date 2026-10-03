@@ -8,6 +8,12 @@ static const char *TAG = "APP_STORAGE";
 #define FRAM_ADDR_QUEUE_HEADER     FRAM_ADDR_RING_BUFFER_LOGS
 #define FRAM_ADDR_QUEUE_DATA_START (FRAM_ADDR_RING_BUFFER_LOGS + sizeof(telemetry_queue_header_t))
 
+#define TOTAL_IR_BYTES_NEEDED (IR_SLOT_COUNT * IR_SLOT_SIZE_BYTES)
+#define MAX_IR_AVAILABLE_BYTES (FRAM_TOTAL_SIZE - FRAM_ADDR_IR_RAW_DATA)
+
+static_assert(TOTAL_IR_BYTES_NEEDED <= MAX_IR_AVAILABLE_BYTES, 
+              "ERRO DE COMPILAÇÃO: A quantidade de comandos IR configurada ultrapassa o tamanho total da FRAM!");
+
 esp_err_t app_storage_init(void) {
     esp_err_t ret = fram_init();
     if (ret != ESP_OK) {

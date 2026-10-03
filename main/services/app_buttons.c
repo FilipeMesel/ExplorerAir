@@ -26,31 +26,18 @@ typedef enum {
 } menu_state_t;
 
 // Sequência exata de comandos/telas IR
-static const ui_ir_cmd_action_t COMMAND_SEQUENCE[] = {
-    UI_IR_CMD_POWER_OFF,
-    UI_IR_CMD_POWER_ON,
-    UI_IR_CMD_TEMP_18,
-    UI_IR_CMD_TEMP_19,
-    UI_IR_CMD_TEMP_20,
-    UI_IR_CMD_TEMP_21,
-    UI_IR_CMD_TEMP_22,
-    UI_IR_CMD_TEMP_23,
-    UI_IR_CMD_TEMP_24,
-    UI_IR_CMD_TEMP_25
+// Mapeamento automático dos enums de ação
+static const ir_action_slot_t COMMAND_SEQUENCE[] = {
+#define X(enum_name, label) enum_name,
+    IR_COMMAND_LIST(X)
+#undef X
 };
 
 // Mapeamento direto entre o índice da tela (0 a valor máximo) e o enum last_action_t
 static const last_action_t ACTION_MAPPING[] = {
-    IR_ACTION_POWER_OFF,
-    IR_ACTION_POWER_ON,
-    IR_ACTION_SET_TEMP_18,
-    IR_ACTION_SET_TEMP_19,
-    IR_ACTION_SET_TEMP_20,
-    IR_ACTION_SET_TEMP_21,
-    IR_ACTION_SET_TEMP_22,
-    IR_ACTION_SET_TEMP_23,
-    IR_ACTION_SET_TEMP_24,
-    IR_ACTION_SET_TEMP_25
+#define X(enum_name, label) enum_name,
+    IR_COMMAND_LIST(X)
+#undef X
 };
 
 #define TOTAL_COMMANDS (sizeof(COMMAND_SEQUENCE) / sizeof(COMMAND_SEQUENCE[0]))

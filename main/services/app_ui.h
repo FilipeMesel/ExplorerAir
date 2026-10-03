@@ -4,6 +4,7 @@
 #include "esp_err.h"
 #include "display_oled.h"
 #include <stdint.h>
+#include "app_structs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,16 +17,9 @@ extern "C" {
  * @brief Enums para as ações de comandos IR exibidas na UI
  */
 typedef enum {
-    UI_IR_CMD_POWER_OFF = 0,
-    UI_IR_CMD_POWER_ON,
-    UI_IR_CMD_TEMP_18,
-    UI_IR_CMD_TEMP_19,
-    UI_IR_CMD_TEMP_20,
-    UI_IR_CMD_TEMP_21,
-    UI_IR_CMD_TEMP_22,
-    UI_IR_CMD_TEMP_23,
-    UI_IR_CMD_TEMP_24,
-    UI_IR_CMD_TEMP_25,
+#define X_ENUM(enum_name, label) UI_##enum_name,
+    IR_COMMAND_LIST(X_ENUM)
+#undef X_ENUM
     UI_IR_CMD_MAX
 } ui_ir_cmd_action_t;
 
