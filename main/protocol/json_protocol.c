@@ -163,6 +163,8 @@ static ir_action_slot_t action_str_to_enum(const char *str) {
     if (!str) return IR_ACTION_NONE;
     if (strcmp(str, "POWER_OFF") == 0)   return IR_ACTION_POWER_OFF;
     if (strcmp(str, "POWER_ON") == 0)    return IR_ACTION_POWER_ON;
+    if (strcmp(str, "SET_TEMP_16") == 0) return IR_ACTION_SET_TEMP_16;
+    if (strcmp(str, "SET_TEMP_17") == 0) return IR_ACTION_SET_TEMP_17;
     if (strcmp(str, "SET_TEMP_18") == 0) return IR_ACTION_SET_TEMP_18;
     if (strcmp(str, "SET_TEMP_19") == 0) return IR_ACTION_SET_TEMP_19;
     if (strcmp(str, "SET_TEMP_20") == 0) return IR_ACTION_SET_TEMP_20;
@@ -171,6 +173,7 @@ static ir_action_slot_t action_str_to_enum(const char *str) {
     if (strcmp(str, "SET_TEMP_23") == 0) return IR_ACTION_SET_TEMP_23;
     if (strcmp(str, "SET_TEMP_24") == 0) return IR_ACTION_SET_TEMP_24;
     if (strcmp(str, "SET_TEMP_25") == 0) return IR_ACTION_SET_TEMP_25;
+    if (strcmp(str, "SET_TEMP_26") == 0) return IR_ACTION_SET_TEMP_26;
     return IR_ACTION_NONE;
 }
 
@@ -178,6 +181,8 @@ static const char* action_enum_to_str(ir_action_slot_t action) {
     switch (action) {
         case IR_ACTION_POWER_OFF:   return "POWER_OFF";
         case IR_ACTION_POWER_ON:    return "POWER_ON";
+        case IR_ACTION_SET_TEMP_16: return "SET_TEMP_16";
+        case IR_ACTION_SET_TEMP_17: return "SET_TEMP_17";
         case IR_ACTION_SET_TEMP_18: return "SET_TEMP_18";
         case IR_ACTION_SET_TEMP_19: return "SET_TEMP_19";
         case IR_ACTION_SET_TEMP_20: return "SET_TEMP_20";
@@ -186,6 +191,7 @@ static const char* action_enum_to_str(ir_action_slot_t action) {
         case IR_ACTION_SET_TEMP_23: return "SET_TEMP_23";
         case IR_ACTION_SET_TEMP_24: return "SET_TEMP_24";
         case IR_ACTION_SET_TEMP_25: return "SET_TEMP_25";
+        case IR_ACTION_SET_TEMP_26: return "SET_TEMP_26";
         default:                    return "NONE";
     }
 }

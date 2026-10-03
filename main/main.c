@@ -23,7 +23,7 @@
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
-#define MQTT_CONNECTED_TIMEOUT      10000000ULL
+#define MQTT_CONNECTED_TIMEOUT      (2*10000000ULL)
 
 static const char *TAG = "MAIN_APP";
 
