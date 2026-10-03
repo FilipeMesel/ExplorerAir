@@ -20,6 +20,7 @@ static const char *TAG = "APP_BUTTONS";
 
 typedef enum {
     MENU_STATE_MAIN,
+    MENU_STATE_SELECT_MIN_TEMP,
     MENU_STATE_IR_LEARN,
     MENU_STATE_IR_TEST,
     MENU_STATE_IR_DOWNLOAD
@@ -51,6 +52,30 @@ static uint8_t s_exit_prompt_option = 0;    // Opção do prompt (0: Continuar, 
 // Estado interno do Aprendizado IR
 static bool s_ir_captured = false;
 static ir_raw_command_t s_captured_cmd;
+static uint8_t s_min_temp_option = 0;
+
+static void render_min_temp_menu(uint8_t option) {
+    switch (option) {
+        case 0:
+            app_ui_post_message("TEMP MINIMA AC:", "> 16 C   17C   18C", 0);
+            break;
+        case 1:
+            app_ui_post_message("TEMP MINIMA AC:", "  16C  > 17 C  18C", 0);
+            break;
+        case 2:
+            app_ui_post_message("TEMP MINIMA AC:", "  16C   17C  > 18 C", 0);
+            break;
+    }
+}
+
+static void save_dummy_disabled_slot(uint8_t slot_index) {
+    ir_raw_command_t dummy_cmd = {
+        .length = 1,
+        .data = {0}
+    };
+    app_storage_save_ir_command(slot_index, &dummy_cmd);
+    ESP_LOGI(TAG, "Slot %d marcado como desativado/ignorado (buffer len=1, val=0).", slot_index);
+}
 
 static void handle_exit_with_bitmap(bool request_download)
 {
@@ -190,34 +215,58 @@ static void app_buttons_task(void *pvParameters) {
                     // Cycles between 0 (Learn), 1 (Test), and 2 (Download)
                     s_selected_option = (s_selected_option + 1) % 3;
                     render_main_menu(s_selected_option);
-
-                } else if (s_in_exit_prompt) {
+                }
+                else if (s_current_menu == MENU_STATE_SELECT_MIN_TEMP)
+                {
+                    // Alterna entre as opções 16C (0), 17C (1) e 18C (2)
+                    s_min_temp_option = (s_min_temp_option + 1) % 3;
+                    render_min_temp_menu(s_min_temp_option);
+                }
+                else if (s_in_exit_prompt)
+                {
                     s_exit_prompt_option = (s_exit_prompt_option == 0) ? 1 : 0;
                     update_ir_screen();
-
-                } else if (s_current_menu == MENU_STATE_IR_LEARN) {
+                }
+                else if (s_current_menu == MENU_STATE_IR_LEARN)
+                {
                     if (s_ir_captured) {
                         app_storage_save_ir_command(s_cmd_index, &s_captured_cmd);
                         ESP_LOGI(TAG, "Comando IR do Slot %d salvo na FRAM!", s_cmd_index);
                         
                         s_ir_captured = false;
+                        // Calcula o próximo slot
+                        uint8_t next_index = s_cmd_index + 1;
 
-                        if (s_cmd_index + 1 >= TOTAL_COMMANDS) {
+                        // Se a temperatura mínima for 17°C, pula o Slot 2 (16°C)
+                        if (s_min_temp_option == 1 && next_index == IR_ACTION_SET_TEMP_16)
+                        {
+                            next_index++; // Avança direto para 17°C (Slot 3)
+                        }
+                        // Se a temperatura mínima for 18°C, pula os Slots 2 e 3 (16°C e 17°C)
+                        else if (s_min_temp_option == 2 && (next_index == IR_ACTION_SET_TEMP_16 || next_index == IR_ACTION_SET_TEMP_17))
+                        {
+                            next_index = IR_ACTION_SET_TEMP_18; // Avança direto para 18°C (Slot 4)
+                        }
+
+                        if (next_index >= TOTAL_COMMANDS)
+                        {
                             handle_exit_with_bitmap(false);
 
                             s_in_exit_prompt = true;
                             s_exit_prompt_option = 0;
                             update_ir_screen();
-                        } else {
-                            s_cmd_index++;
+                        }
+                        else
+                        {
+                            s_cmd_index = next_index;
                             update_ir_screen();
                         }
                     }
-
-                } else if (s_current_menu == MENU_STATE_IR_TEST) {
+                }
+                else if (s_current_menu == MENU_STATE_IR_TEST)
+                {
                     s_cmd_index = (s_cmd_index + 1) % TOTAL_COMMANDS;
                     update_ir_screen();
-
                 }
             }
 
@@ -227,12 +276,11 @@ static void app_buttons_task(void *pvParameters) {
             if (enter_pressed && !last_enter) {
                 if (s_current_menu == MENU_STATE_MAIN) {
                     if (s_selected_option == 0) {
-                        s_current_menu = MENU_STATE_IR_LEARN;
-                        s_cmd_index = 0;
-                        s_in_exit_prompt = false;
-                        s_ir_captured = false;
-                        ir_remote_resume_ir_receiver();
-                        update_ir_screen();
+                        s_current_menu = MENU_STATE_SELECT_MIN_TEMP;
+                        s_min_temp_option = 0; // Inicia selecionando 16°C
+
+                        // 2. Desenha a tela no display
+                        render_min_temp_menu(s_min_temp_option);
                     } else if (s_selected_option == 1) {
                         s_current_menu = MENU_STATE_IR_TEST;
                         s_cmd_index = 0;
@@ -246,7 +294,31 @@ static void app_buttons_task(void *pvParameters) {
                         app_ui_post_message("   DOWNLOAD   ", "  DOWNLOAD IR AC  ", 0);
                     }
 
-                } else if (s_in_exit_prompt) {
+                }
+                else if (s_current_menu == MENU_STATE_SELECT_MIN_TEMP)
+                {
+                    // Trata e pula os comandos conforme a escolha
+                    // Slot 0 = POWER_OFF, Slot 1 = POWER_ON, Slot 2 = 16 C, Slot 3 = 17 C
+                    if (s_min_temp_option == 1)
+                    {                                                    // Escolheu 17 C
+                        save_dummy_disabled_slot(IR_ACTION_SET_TEMP_16); // Grava buffer dummy no slot 16C
+                    }
+                    else if (s_min_temp_option == 2)
+                    {                                                    // Escolheu 18 C
+                        save_dummy_disabled_slot(IR_ACTION_SET_TEMP_16); // Grava buffer dummy no slot 16C
+                        save_dummy_disabled_slot(IR_ACTION_SET_TEMP_17); // Grava buffer dummy no slot 17C
+                    }
+
+                    // Inicia o aprendizado normal a partir do DESLIGAR (Slot 0)
+                    s_current_menu = MENU_STATE_IR_LEARN;
+                    s_cmd_index = 0;
+                    s_in_exit_prompt = false;
+                    s_ir_captured = false;
+                    ir_remote_resume_ir_receiver();
+                    update_ir_screen();
+                }
+                else if (s_in_exit_prompt)
+                {
                     if (s_exit_prompt_option == 1) { // Selected "EXIT"
                         s_current_menu = MENU_STATE_MAIN;
                         s_in_exit_prompt = false;
@@ -257,15 +329,17 @@ static void app_buttons_task(void *pvParameters) {
                         s_ir_captured = false;
                         update_ir_screen();
                     }
-
-                } else if (s_current_menu == MENU_STATE_IR_LEARN) {
+                }
+                else if (s_current_menu == MENU_STATE_IR_LEARN)
+                {
                     if (s_ir_captured) {
                         ESP_LOGI(TAG, "Sinal IR descartado pelo usuario. Aguardando novo sinal...");
                         s_ir_captured = false;
                         update_ir_screen();
                     }
-
-                } else if (s_current_menu == MENU_STATE_IR_TEST) {
+                }
+                else if (s_current_menu == MENU_STATE_IR_TEST)
+                {
                     last_action_t current_action = ACTION_MAPPING[s_cmd_index];
                     ESP_LOGI(TAG, "Modo Teste: Disparando acao %d (Slot %d)...", current_action, s_cmd_index);
                     
@@ -275,7 +349,6 @@ static void app_buttons_task(void *pvParameters) {
                         ESP_LOGE(TAG, "Erro ao disparar acao IR: %s", esp_err_to_name(ret));
                     }
                     update_ir_screen();
-
                 }
                 else if (s_current_menu == MENU_STATE_IR_DOWNLOAD)
                 {

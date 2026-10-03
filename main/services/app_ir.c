@@ -57,5 +57,10 @@ esp_err_t app_ir_dispatch_action(ir_action_slot_t action)
         return ESP_ERR_NOT_FOUND;
     }
 
+    if (ir_cmd.length == 1 && ir_cmd.data[0] == 0) {
+        ESP_LOGW("APP_IR", "Comando do Slot %d esta desativado/ignorado (len=1, data[0]=0). Envio cancelado.", slot_idx);
+        return ESP_OK;
+    }
+
     return ir_remote_send_command(&ir_cmd);
 }

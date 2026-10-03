@@ -50,6 +50,8 @@
 #define IR_COMMAND_LIST(X) \
     X(IR_ACTION_POWER_OFF,   "DESLIGAR") \
     X(IR_ACTION_POWER_ON,    "LIGAR")    \
+    X(IR_ACTION_SET_TEMP_16, "16 C")     \
+    X(IR_ACTION_SET_TEMP_17, "17 C")     \
     X(IR_ACTION_SET_TEMP_18, "18 C")     \
     X(IR_ACTION_SET_TEMP_19, "19 C")     \
     X(IR_ACTION_SET_TEMP_20, "20 C")     \
@@ -57,7 +59,8 @@
     X(IR_ACTION_SET_TEMP_22, "22 C")     \
     X(IR_ACTION_SET_TEMP_23, "23 C")     \
     X(IR_ACTION_SET_TEMP_24, "24 C")     \
-    X(IR_ACTION_SET_TEMP_25, "25 C")
+    X(IR_ACTION_SET_TEMP_25, "25 C")     \
+    X(IR_ACTION_SET_TEMP_26, "26 C")
 
 /**
  * @brief Enum para indexação legível dos slots IR

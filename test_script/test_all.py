@@ -27,28 +27,34 @@ LOG_ERROR_FILE = "error_log.txt"
 ACTION_NAMES = {
     0: "DESLIGAR",
     1: "LIGAR",
-    2: "TEMP_18C",
-    3: "TEMP_19C",
-    4: "TEMP_20C",
-    5: "TEMP_21C",
-    6: "TEMP_22C",
-    7: "TEMP_23C",
-    8: "TEMP_24C",
-    9: "TEMP_25C"
+    2: "TEMP_16C",
+    3: "TEMP_17C",
+    4: "TEMP_18C",
+    5: "TEMP_19C",
+    6: "TEMP_20C",
+    7: "TEMP_21C",
+    8: "TEMP_22C",
+    9: "TEMP_23C",
+    10: "TEMP_24C",
+    11: "TEMP_25C",
+    12: "TEMP_26C",
 }
 
 ACTION_SLOT_MAP = {
-    0: "NONE",
-    1: "POWER_OFF",
-    2: "POWER_ON",
-    3: "TEMP_18C",
-    4: "TEMP_19C",
-    5: "TEMP_20C",
-    6: "TEMP_21C",
-    7: "TEMP_22C",
-    8: "TEMP_23C",
-    9: "TEMP_24C",
-    10: "TEMP_25C",
+    0: "POWER_OFF",
+    1: "POWER_ON",
+    2: "TEMP_16C",
+    3: "TEMP_17C",
+    4: "TEMP_18C",
+    5: "TEMP_19C",
+    6: "TEMP_20C",
+    7: "TEMP_21C",
+    8: "TEMP_22C",
+    9: "TEMP_23C",
+    10: "TEMP_24C",
+    11: "TEMP_25C",
+    12: "TEMP_26C",
+    13: "NONE",
 }
 
 RESET_REASONS = {
@@ -90,7 +96,10 @@ TRIGGER_MAP = {
       5: 6,
       6: 7,
       7: 8,
-      8: 9
+      8: 9,
+      9: 10,
+      10: 11,
+      11: 12
 }
 
 # ==============================================================================
@@ -295,7 +304,7 @@ class InteractiveSystemTester:
                     next_action = TRIGGER_MAP[received_action]
                     time.sleep(0.1)
                     self.send_cmd_8(next_action)
-                elif received_action == 9:
+                elif received_action == 12:
                     logging.info("✅ Ciclo de download finalizado com sucesso no ESP32!")
                     self.response_event.set()
             else:
@@ -386,14 +395,14 @@ class InteractiveSystemTester:
             self.response_event.clear()
             if self.response_event.wait(timeout=5):
                 captured_count = len(self.captured_ir_raws)
-                print(f"  • Progresso da Captura: {captured_count}/10 comandos na memória local.")
-                if captured_count >= 10:
+                print(f"  • Progresso da Captura: {captured_count}/13 comandos na memória local.")
+                if captured_count >= 13:
                     break
 
-        if len(self.captured_ir_raws) == 10:
-            self.record_test_result("Learn IR", True, "Todos os 10 comandos IR foram capturados e salvos no script.")
+        if len(self.captured_ir_raws) == 13:
+            self.record_test_result("Learn IR", True, "Todos os 13 comandos IR foram capturados e salvos no script.")
         else:
-            self.record_test_result("Learn IR", False, f"Captura incompleta: {len(self.captured_ir_raws)}/10 comandos recebidos.")
+            self.record_test_result("Learn IR", False, f"Captura incompleta: {len(self.captured_ir_raws)}/13 comandos recebidos.")
 
         self.active_test_mode = None
 
@@ -418,8 +427,8 @@ class InteractiveSystemTester:
             print("🚀 Enviando comando inicial (Slot 0) para iniciar o ciclo de download...")
             self.send_cmd_8(0)
 
-        if self.response_event.wait(timeout=60) or self.last_download_action_ack == 9:
-            self.record_test_result("Send IR Remote", True, "Sucesso: Todos os comandos IR foram salvos e confirmados pelo ESP32 via CMD 9.")
+        if self.response_event.wait(timeout=60) or self.last_download_action_ack == 12:
+            self.record_test_result("Send IR Remote", True, "Sucesso: Todos os comandos IR foram salvos e confirmados pelo ESP32 via CMD 12.")
         else:
             self.record_test_result("Send IR Remote", False, f"Falha/Timeout: Envio abortado ou incompleto no Slot {self.last_download_action_ack}.")
 
@@ -455,21 +464,21 @@ class InteractiveSystemTester:
                 "id": 0,
                 "target_dt": now + timedelta(minutes=2),
                 "action_str": "SET_TEMP_18",
-                "expected_action_slot": 3,
+                "expected_action_slot": 4,
                 "expected_rst_cause": 7
             },
             {
                 "id": 1,
                 "target_dt": now + timedelta(minutes=4),
                 "action_str": "SET_TEMP_22",
-                "expected_action_slot": 7,
+                "expected_action_slot": 8,
                 "expected_rst_cause": 15
             },
             {
                 "id": 2,
                 "target_dt": now + timedelta(minutes=6),
                 "action_str": "POWER_OFF",
-                "expected_action_slot": 1,
+                "expected_action_slot": 0,
                 "expected_rst_cause": 3
             }
         ]
